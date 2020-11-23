@@ -1,0 +1,20 @@
+{
+  "reply bot": true,
+  "bad users": [],
+  "trigger words": [
+    "fried",
+    "steam",
+    "cooked",
+    "cook",
+    "bbq",
+    "eat",
+    "eating",
+    "barbeque",
+    "goreng",
+    "sashimi"],
+  "choices": {
+    "good": ["Yes.", "Yes!", "Furret approve.", "Furret like it.", "Furret love it!"],
+    "bad": ["No.", "No!", "Furret disprove.", "Furret dislike it", "Furret hate it!"],
+    "very bad": ["Fuck you!"]
+  }
+}
