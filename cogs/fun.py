@@ -53,10 +53,10 @@ class Fun(commands.Cog):
                 if reply:
 
                     # Randomly reply
-                    if random.randint(1, 1000) <= 69:  # 6.9 %
+                    if random.randint(1, 1000) <= 42:  # 4.2 %
                         if random.randint(1, 100) == 0:  # 1 %
                             await msg.channel.send('*happy furret noises*')
-                        else:  # 6.9 %
+                        else:  # 4.2 %
                             await msg.channel.send(msg.content)
 
             """Angry Furret"""
