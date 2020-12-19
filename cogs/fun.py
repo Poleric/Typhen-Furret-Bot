@@ -54,7 +54,7 @@ class Fun(commands.Cog):
 
                     # Randomly reply
                     if random.randint(1, 1000) <= 42:  # 4.2 %
-                        if random.randint(1, 100) == 0:  # 1 %
+                        if random.randint(1, 100) == 1:  # 1 %
                             await msg.channel.send('*happy furret noises*')
                         else:  # 4.2 %
                             await msg.channel.send(msg.content)
@@ -165,6 +165,12 @@ class Fun(commands.Cog):
 
         greets = ['Hewwo!', 'Hi', 'Hello']
         await ctx.send(random.choice(greets))
+
+    @commands.command()
+    async def choose(self, ctx: commands.Context, num1: int, num2: int):
+        """Let furret pick a random number between two number"""
+
+        await ctx.send(str(random.randint(num1, num2)))
 
     @commands.command(aliases=['goobye', 'bye'])
     async def farewell(self, ctx: commands.Context):
