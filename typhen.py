@@ -7,6 +7,7 @@ import datetime
 import discord
 from discord.ext import commands
 from discord.ext.commands import is_owner
+from discord.ext.commands import CommandNotFound
 from discord.ext.commands.errors import ExtensionNotLoaded
 from discord.ext.commands.errors import ExtensionAlreadyLoaded
 
@@ -29,6 +30,14 @@ async def on_ready():
           f'name: {bot.user.name}\n'
           f'id: {bot.user.id}\n'
           f'on {datetime.datetime.now()}')
+
+
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, CommandNotFound):
+        return
+    else:
+        raise error
 
 
 @bot.command()
@@ -106,7 +115,7 @@ async def reload(ctx, extension):
 # Load all cogs on start
 ignore = ['']
 for file in os.listdir('./cogs/'):
-    if file.endswith('.py'):
+    if file.endswith('.py') and not file.startswith('test'):
         bot.load_extension('cogs.{}'.format(file[:-3]))
 
 # Write commands and aliases list into server.json
