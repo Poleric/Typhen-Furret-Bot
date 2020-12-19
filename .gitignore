@@ -125,7 +125,7 @@ dmypy.json
 .pyre/
 
 # Text files
-.txt
+*.txt
 
 # Login Information
 minecraftserver.json
