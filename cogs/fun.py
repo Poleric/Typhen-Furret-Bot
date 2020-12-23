@@ -167,10 +167,16 @@ class Fun(commands.Cog):
         await ctx.send(random.choice(greets))
 
     @commands.command()
-    async def choose(self, ctx: commands.Context, num1: int, num2: int):
+    async def pick(self, ctx: commands.Context, num1: int, num2: int):
         """Let furret pick a random number between two number"""
 
         await ctx.send(str(random.randint(num1, num2)))
+
+    @commands.command(aliases=['choose'])
+    async def choice(self, ctx: commands.Context, *, choices):
+        """Let furret choose from selections"""
+
+        await ctx.send(random.choice(choices.split()))
 
     @commands.command(aliases=['goobye', 'bye'])
     async def farewell(self, ctx: commands.Context):
