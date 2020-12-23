@@ -1,23 +1,26 @@
+# Modules
 import asyncio
 import re
 import json
 
+# Objects
 from pyppeteer import launch
+from pyppeteer.page import Page
+from pyppeteer.browser import Browser
+from discord.ext import commands
+from discord.ext import tasks
+from discord import Embed
+from discord.ext.commands import Context
+
+# Errors
 from pyppeteer.errors import TimeoutError
 from pyppeteer.errors import PageError
 from pyppeteer.errors import ElementHandleError
-from pyppeteer.page import Page
-from pyppeteer.browser import Browser
-
-from discord import Embed
-from discord.ext import commands
-from discord.ext import tasks
-from discord.ext.commands import Context
 
 
 class Status:
 
-    def __init__(self, status, time=None):
+    def __init__(self, status: str, time: str =None):
         self.status = status
         self.time = time
 
@@ -191,12 +194,15 @@ class Aternos:
         # Click into server page
         await servers[0].click()
         browsers.append(ServerBrowser(browser, page))
+        # Get current browsers cookies so it doesn't need login info when creating new instances
         cookies = await page.cookies()
         # If there's more than one server
         for i in range(len(servers) - 1):
+            # Create new browser instance
             browser = await launch(headless=True, dumpio=True)
             page = await browser.pages()
             page = page[0]
+            # Apply cookies
             await page.setCookie(*cookies)
             navigationPromise = asyncio.ensure_future(page.waitForNavigation())
             await page.goto('https://aternos.org/servers/')
@@ -264,7 +270,7 @@ class Minecraft(commands.Cog):
                 embed: Embed = await self.server.createServerListEmbed()
                 await ctx.send(embed=embed)
 
-            elif command == 'status':
+            elif command in ('status', 'ststua'):
                 """Send embed containing a server status"""
 
                 if arg is not None:
@@ -280,7 +286,7 @@ class Minecraft(commands.Cog):
                 else:
                     await ctx.send('**Please specify a server after the command.**')
 
-            elif command == 'start':
+            elif command in ('start', 'open'):
                 """Starts server"""
 
                 if arg is not None:
