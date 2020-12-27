@@ -17,10 +17,11 @@ from discord.ext.commands import has_permissions
 
 class Silenced:
 
-    def __init__(self, member: Member, start_time: datetime, duration: timedelta):
+    def __init__(self, member: Member, start_time: datetime, duration: timedelta, reason):
         self.member = member
         self.start_time = start_time
         self.end_time = start_time + duration
+        self.reason = reason
 
     def __str__(self):
         return f'{self.member.name}#{self.member.discriminator}'
@@ -29,7 +30,7 @@ class Silenced:
     async def ensureSilenced(self, afkVoiceChannel: VoiceChannel):
         if datetime.now() < self.end_time:
             if self.member.voice is not None and self.member.voice.channel != afkVoiceChannel:
-                await self.member.move_to(afkVoiceChannel, reason='Silenced')
+                await self.member.move_to(afkVoiceChannel, reason=self.reason)
         else:
             self.ensureSilenced.cancel()
 
@@ -46,7 +47,7 @@ class Administration(commands.Cog):
 
     @commands.command(aliases=['silence', 'jail'])
     @has_permissions(administrator=True)
-    async def bonk(self, ctx: Context, *, mentions: str):
+    async def bonk(self, ctx: Context, mention: str, duration: str = None, *, reason: str = None):
         """Lock mentioned member in the guild's inactive channel
 
         Default 30 seconds. Accepted affixes:
@@ -55,30 +56,38 @@ class Administration(commands.Cog):
         h - hours
         d - days
         """
-
-        start_time = datetime.now()
-        duration = timedelta(seconds=30)
-        time_str = mentions.split()[-1]
-        if time_str.isdecimal():
-            duration = timedelta(seconds=int(time_str))
-        elif regex := re.match("\d+[smhd]", time_str):
-            if (time := regex[0]).endswith('s'):
-                duration = timedelta(seconds=int(time[:-1]))
-            elif time.endswith('m'):
-                duration = timedelta(minutes=int(time[:-1]))
-            elif time.endswith('h'):
-                duration = timedelta(hours=int(time[:-1]))
-            elif time.endswith('d'):
-                duration = timedelta(days=int(time[:-1]))
-
-        for member in ctx.message.mentions:
-            silenced = Silenced(member, start_time, duration)
-            self.silenced.append(silenced)
-            silenced.ensureSilenced.start(afkVoiceChannel=ctx.guild.afk_channel)
-            await ctx.send(f'***BONK!!!*** Go to {ctx.guild.afk_channel.mention}, {member.mention} for {format_timespan(duration.total_seconds())}.')
+        if ctx.message.mentions:
+            if ctx.guild.afk_channel:
+                start_time = datetime.now()
+                if duration:
+                    if duration.isdecimal():
+                        duration = timedelta(seconds=int(duration))
+                    elif regex := re.match("\d+[smhd]", duration):
+                        if (time := regex[0]).endswith('s'):
+                            duration = timedelta(seconds=int(time[:-1]))
+                        elif time.endswith('m'):
+                            duration = timedelta(minutes=int(time[:-1]))
+                        elif time.endswith('h'):
+                            duration = timedelta(hours=int(time[:-1]))
+                        elif time.endswith('d'):
+                            duration = timedelta(days=int(time[:-1]))
+                    else:
+                        reason = f'{duration} {reason if reason else ""}'
+                        duration = timedelta(seconds=30)
+                else:
+                    duration = timedelta(seconds=30)
+                member = ctx.message.mentions[0]
+                silenced = Silenced(member, start_time, duration, reason)
+                self.silenced.append(silenced)
+                silenced.ensureSilenced.start(afkVoiceChannel=ctx.guild.afk_channel)
+                await ctx.send(f'***BONK!!!*** Go to {ctx.guild.afk_channel.mention}, {member.mention} for {format_timespan(duration.total_seconds())}.')
+            else:
+                await ctx.send("No inactive channel to send to.")
+        else:
+            await ctx.send('Who the hell ya wan me to bonk.')
 
     @commands.command(aliases=['free'])
-    async def release(self, ctx: Context):
+    async def release(self, ctx: Context, *, mentions: str):
         """Release mentioned member from the guild's inactive channel"""
 
         for member in ctx.message.mentions:
