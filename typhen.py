@@ -1,20 +1,23 @@
 import os
-
+import traceback
 import json
 
 import datetime
 
 import discord
+from discord import Intents
 from discord.ext import commands
 from discord.ext.commands import is_owner
 from discord.ext.commands import CommandNotFound
 from discord.ext.commands.errors import ExtensionNotLoaded
 from discord.ext.commands.errors import ExtensionAlreadyLoaded
+from discord.ext.commands.errors import ExtensionFailed
 
 with open('./config/server.json', 'r') as data:
     server_config = json.load(data)
 
 bot = commands.Bot(command_prefix=commands.when_mentioned_or(server_config['prefix']),
+                   intents=Intents.all(),
                    status=discord.Status.online,
                    activity=discord.Game('Pokémon | {}help'.format(server_config['prefix'])))
 
@@ -115,8 +118,11 @@ async def reload(ctx, extension):
 # Load all cogs on start
 ignore = ['']
 for file in os.listdir('./cogs/'):
-    if file.endswith('.py') and not file.startswith('test'):
-        bot.load_extension('cogs.{}'.format(file[:-3]))
+    try:
+        if file.endswith('.py') and not file.startswith('test'):
+            bot.load_extension('cogs.{}'.format(file[:-3]))
+    except ExtensionFailed:
+        traceback.print_exc()
 
 # Write commands and aliases list into server.json
 commands = list()
