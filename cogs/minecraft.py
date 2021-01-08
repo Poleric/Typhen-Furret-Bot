@@ -6,33 +6,57 @@ import json
 # Objects
 from pyppeteer import launch
 from pyppeteer.page import Page
-from pyppeteer.browser import Browser
 from discord.ext import commands
 from discord.ext import tasks
 from discord import Embed
 from discord.ext.commands import Context
 
-# Errors
+# Exception
 from pyppeteer.errors import TimeoutError
 from pyppeteer.errors import PageError
 from pyppeteer.errors import ElementHandleError
 
 
+class ServerStatusError(Exception):
+    pass
+
+
+class StartupError(Exception):
+    pass
+
+
 class Status:
 
-    def __init__(self, status: str, time: str =None):
+    def __init__(self, status: str, est: str = None):
         self.status = status
-        self.time = time
+        self.est = est
 
     def __str__(self):
         return self.status
 
 
-class ServerBrowser:
+class AternosServer:
 
-    def __init__(self, browser: Browser, page: Page):
-        self.browser = browser
+    def __init__(self, page: Page):
         self.page = page
+
+    async def getStatus(self):
+        if self.page.url != 'https://aternos.org/server/':
+            navigationPromise = asyncio.ensure_future(self.page.waitForNavigation())
+            await self.page.goto('https://aternos.org/server/')
+            await navigationPromise
+        statusBox = await self.page.J('.statuslabel-label')
+        status = await self.page.evaluate('statusBox => statusBox.textContent', statusBox)
+        if (status := status.strip()) == 'Waiting in queue':
+            try:
+                estBox = await self.page.waitFor('.queue-time', timeout=500)
+            except TimeoutError:
+                raise TimeoutError
+            else:
+                est = await self.page.evaluate('estBox => estBox.textContent', estBox)
+                return Status(status, est.strip())
+        else:
+            return Status(status)
 
     async def getIP(self):
         if self.page.url != 'https://aternos.org/server/':
@@ -62,69 +86,61 @@ class ServerBrowser:
         version = await self.page.evaluate('versionBox => versionBox.textContent', versionBox)
         return version
 
-    async def getStatus(self):
+    async def startServer(self):
         if self.page.url != 'https://aternos.org/server/':
             navigationPromise = asyncio.ensure_future(self.page.waitForNavigation())
             await self.page.goto('https://aternos.org/server/')
             await navigationPromise
-        statusBox = await self.page.J('.statuslabel-label')
-        status = await self.page.evaluate('statusBox => statusBox.textContent', statusBox)
-        if (status := status.strip()) == 'Waiting in queue':
-            try:
-                await self.page.waitFor('.queue-time', timeout=500)
-            except TimeoutError:
-                raise TimeoutError
-            else:
-                estBox = await self.page.J('.queue-time')
-                est = await self.page.evaluate('estBox => estBox.textContent', estBox)
-                return Status(status, est.strip())
-        else:
-            return Status(status)
-
-    async def startServer(self):
-        try:
+        if str(await self.getStatus()) == "Offline":
             await self.page.click('#start')
-        # When Node is either not visible or not an HTMLElement
-        except ElementHandleError:
-            return False
-        else:
+            # Try to click away the notification box
             try:
-                await self.page.waitFor('.fa-times-circle', timeout=10000)
+                btn_red = await self.page.waitForXPath('//*[@id="nope"]/main/div/div/div/main/div/a[2]', timeout=5000)
             except TimeoutError:
                 pass
             else:
                 try:
-                    await self.page.click('.fa-times-circle')
-                except ElementHandleError:
+                    await btn_red.click()
+                except (ElementHandleError, PageError):
                     pass
             await asyncio.sleep(2)
+            # Check if successfully opened
             status: Status = await self.getStatus()
             if str(status) == 'Offline':
-                return False
+                raise StartupError('**Server not started.**')
             else:
                 if str(status) == 'Waiting in queue':
                     self.confirmation.start()
-                return True
+        else:
+            raise ServerStatusError('**Server is not offline.**')
 
     async def stopServer(self):
-        try:
+        if self.page.url != 'https://aternos.org/server/':
+            navigationPromise = asyncio.ensure_future(self.page.waitForNavigation())
+            await self.page.goto('https://aternos.org/server/')
+            await navigationPromise
+        if str(await self.getStatus()) in ('Online', 'Starting'):
             await self.page.click('#stop')
-        # When Node is either not visible or not an HTMLElement
-        except ElementHandleError:
-            return False
+            self.confirmation.cancel()
+            self.remindOnStart.cancel()
         else:
-            return True
+            raise ServerStatusError('**Server is not online.**')
 
     async def restartServer(self):
-        try:
+        if self.page.url != 'https://aternos.org/server/':
+            navigationPromise = asyncio.ensure_future(self.page.waitForNavigation())
+            await self.page.goto('https://aternos.org/server/')
+            await navigationPromise
+        if str(await self.getStatus()) == 'Online':
             await self.page.click('#restart')
-        # When Node is either not visible or not an HTMLElement
-        except ElementHandleError:
-            return False
         else:
-            return True
+            raise ServerStatusError('**Server is not online.**')
 
     async def confirmServer(self):
+        if self.page.url != 'https://aternos.org/server/':
+            navigationPromise = asyncio.ensure_future(self.page.waitForNavigation())
+            await self.page.goto('https://aternos.org/server/')
+            await navigationPromise
         try:
             await self.page.click('#confirm')
         # When Node is either not visible or not an HTMLElement
@@ -143,7 +159,7 @@ class ServerBrowser:
             playerCount = await self.getPlayerCount()
             embed.add_field(name='Player Count', value=playerCount, inline=True)
         elif str(status) == 'Waiting in queue':
-            embed.add_field(name='EST', value=status.time, inline=True)
+            embed.add_field(name='EST', value=status.est, inline=True)
         embed.add_field(name='Version', value=version, inline=True)
         return embed
 
@@ -152,7 +168,7 @@ class ServerBrowser:
         status: Status = await self.getStatus()
         if str(status) == 'Online':
             serverIP: str = await self.getIP()
-            await ctx.send(f'`{serverIP}` **is now online.** {ctx.author.mention}')
+            await ctx.reply(f'`{serverIP}` **is now online.**')
             self.remindOnStart.cancel()
 
     @tasks.loop(seconds=10.0)
@@ -162,85 +178,93 @@ class ServerBrowser:
             self.confirmation.cancel()
 
 
-class Aternos:
+class AternosList:
 
-    def __init__(self, serverBrowsers: list[ServerBrowser]):
-        self.serverBrowsers = serverBrowsers
+    def __init__(self, servers: list[AternosServer]):
+        self.servers = servers
+
+    def __len__(self):
+        return len(self.servers)
+
+    def __getitem__(self, item: int):
+        return self.servers[item]
 
     @classmethod
-    async def create(cls, username: str, password: str):
-
+    async def create(cls, username, password):
         browser = await launch(headless=True, dumpio=True)
-        browsers = []
         page = await browser.pages()
         page = page[0]
-        # Go to Aternos
+
         navigationPromise = asyncio.ensure_future(page.waitForNavigation())
         await page.goto("https://aternos.org/go/")
         await navigationPromise
-        # Fill in username
+
         usernameBox = await page.J('#user')
         await usernameBox.click()
         await page.keyboard.type(username)
-        # Fill in password
+
         passwordBox = await page.J('#password')
         await passwordBox.click()
         await page.keyboard.type(password)
+
         navigationPromise = asyncio.ensure_future(page.waitForNavigation())
         await page.keyboard.press('Enter')
         await navigationPromise
-        # Find servers
-        servers = await page.JJ('.server-body')
-        # Click into server page
-        await servers[0].click()
-        browsers.append(ServerBrowser(browser, page))
-        # Get current browsers cookies so it doesn't need login info when creating new instances
+
+        servers_list = await page.JJ('.server-body')
+
+        await servers_list[0].click()
+        servers = list()
+        servers.append(AternosServer(page))
+
         cookies = await page.cookies()
-        # If there's more than one server
-        for i in range(len(servers) - 1):
-            # Create new browser instance
+
+        for i in range(len(servers_list) - 1):
+
             browser = await launch(headless=True, dumpio=True)
             page = await browser.pages()
             page = page[0]
-            # Apply cookies
+
             await page.setCookie(*cookies)
+
             navigationPromise = asyncio.ensure_future(page.waitForNavigation())
             await page.goto('https://aternos.org/servers/')
             await navigationPromise
-            # Find servers
-            servers = await page.JJ('.server-body')
-            # Click into server page
-            await servers[i + 1].click()
-            browsers.append(ServerBrowser(browser, page))
+
+            servers_list = await page.JJ('.server-body')
+
+            await servers_list[i + 1].click()
+            servers.append(AternosServer(page))
+
         navigationPromise = asyncio.ensure_future(page.waitForNavigation())
         await navigationPromise
-        return cls(browsers)
+        return cls(servers)
 
-    async def getServerBrowser(self, name_or_index: str):
+    async def getServer(self, name_or_index: str):
         names = list()
-        for serverBrowser in self.serverBrowsers:
+        for serverBrowser in self.servers:
             name = await serverBrowser.getIP()
             name = re.search('[\w\d]+', name)[0]
             names.append(name)
         if name_or_index.isdecimal():
             try:
-                return self.serverBrowsers[int(name_or_index) - 1]
+                return self[int(name_or_index) - 1]
             except IndexError:
                 pass
         for i, name in enumerate(names):
             if name.find(str(name_or_index)) != -1:
-                return self.serverBrowsers[i]
+                return self[i]
         return None
 
     async def cleanup(self):
-        for browserInstance in self.serverBrowsers:
+        for browserInstance in self.servers:
             browserInstance.remindOnStart.cancel()
             browserInstance.confirmation.cancel()
-            await browserInstance.browser.close()
+            await browserInstance.page.browser.close()
 
     async def createServerListEmbed(self):
         embed = Embed(title='List of servers', color=0xf0d4b1)
-        for i, serverBrowser in enumerate(self.serverBrowsers):
+        for i, serverBrowser in enumerate(self.servers):
             IP = await serverBrowser.getIP()
             status = await serverBrowser.getStatus()
             embed.add_field(name='\u200b', value=f'`{i + 1}.` {IP} | `{str(status)}`', inline=False)
@@ -252,6 +276,7 @@ class Minecraft(commands.Cog):
     def __init__(self, client):
         self.bot = client
         self.server = None
+        self.secretserver = None
         with open('./config/minecraftserver.json', 'r') as data:
             self.config = json.load(data)
 
@@ -260,108 +285,126 @@ class Minecraft(commands.Cog):
             for server in self.server.serverBrowsers:
                 server.remindOnStart.cancel()
                 server.confirmation.cancel()
+        if self.secretserver is not None:
+            for server in self.secretserver.serverBrowsers:
+                server.remindOnStart.cancel()
+                server.confirmation.cancel()
 
     @commands.command(aliases=['mincraft', 'minceraft', 'mineraft', 'mc'])
     async def minecraft(self, ctx: Context, command: str = None, *, arg: str = None):
-        async with ctx.channel.typing():
+        async with ctx.typing():
+            if ctx.channel.id == 765130597843861516:
+                specifiedServer = self.secretserver
+            else:
+                specifiedServer = self.server
+
             if command is None:
                 """Shows brief info about all servers"""
 
-                embed: Embed = await self.server.createServerListEmbed()
-                await ctx.send(embed=embed)
+                embed: Embed = await specifiedServer.createServerListEmbed()
+                await ctx.reply(embed=embed)
 
             elif command in ('status', 'ststua'):
                 """Send embed containing a server status"""
 
                 if arg is not None:
-                    server: ServerBrowser = await self.server.getServerBrowser(arg)
+                    server: AternosServer = await specifiedServer.getServer(arg)
                     if server is not None:
                         try:
                             statusEmbed: Embed = await server.createStatusEmbed()
-                            await ctx.send(embed=statusEmbed)
+                            await ctx.reply(embed=statusEmbed)
                         except (TimeoutError, PageError):
-                            await ctx.send('**Timed out.**')
+                            await ctx.reply('**Timed out.**')
                     else:
-                        await ctx.send('**Server not found.**')
+                        await ctx.reply('**Server not found.**')
                 else:
-                    await ctx.send('**Please specify a server after the command.**')
+                    await ctx.reply('**Please specify a server after the command.**')
 
             elif command in ('start', 'open'):
                 """Starts server"""
 
                 if arg is not None:
-                    server: ServerBrowser = await self.server.getServerBrowser(arg)
+                    server: AternosServer = await specifiedServer.getServer(arg)
                     if server is not None:
                         try:
-                            startStatus: bool = await server.startServer()
-                            if startStatus:
-                                await ctx.send('**Server starting.**')
-                                server.remindOnStart.start(ctx=ctx)
+                            await server.startServer()
+                            await ctx.reply('**Server starting.**')
+                            server.remindOnStart.start(ctx=ctx)
+                        except Exception as e:
+                            if isinstance(e, StartupError) or isinstance(e, ServerStatusError):
+                                await ctx.reply(str(e))
                             else:
-                                await ctx.send('**Server is not offline.**')
-                        except (TimeoutError, PageError):
-                            await ctx.send('**Timed out.**')
+                                await ctx.reply(repr(e))
+                                raise e
                     else:
-                        await ctx.send('**Server not found.**')
+                        await ctx.reply('**Server not found.**')
                 else:
-                    await ctx.send('**Please specify a server after the command.**')
+                    await ctx.reply('**Please specify a server after the command.**')
 
             elif command in ('stop', 'close'):
                 """Stops server"""
 
                 if arg is not None:
-                    server: ServerBrowser = await self.server.getServerBrowser(arg)
+                    server: AternosServer = await specifiedServer.getServer(arg)
                     if server is not None:
                         try:
-                            stopStatus: bool = await server.stopServer()
-                            if stopStatus:
-                                await ctx.send('**Server closing.**')
+                            await server.stopServer()
+                            await ctx.reply('**Server closing.**')
+                        except Exception as e:
+                            if isinstance(e, ServerStatusError):
+                                await ctx.reply(str(e))
                             else:
-                                await ctx.send('**Server is not online.**')
-                        except (TimeoutError, PageError):
-                            await ctx.send('**Timed out.**')
+                                await ctx.reply(repr(e))
+                                raise e
                     else:
-                        await ctx.send('**Server not found.**')
+                        await ctx.reply('**Server not found.**')
                 else:
-                    await ctx.send('**Please specify a server after the command.**')
+                    await ctx.reply('**Please specify a server after the command.**')
 
             elif command == 'restart':
                 """Restarts server"""
 
                 if arg is not None:
-                    server: ServerBrowser = await self.server.getServerBrowser(arg)
+                    server: AternosServer = await specifiedServer.getServer(arg)
                     if server is not None:
                         try:
-                            restartStatus: bool = await server.restartServer()
-                            if restartStatus:
-                                await ctx.send('**Server restarting.**')
+                            await server.restartServer()
+                            await ctx.reply('**Server restarting.**')
+                            server.remindOnStart.start(ctx=ctx)
+                        except Exception as e:
+                            if isinstance(e, ServerStatusError):
+                                await ctx.reply(str(e))
                             else:
-                                await ctx.send('**Server is not online.**')
-                        except (TimeoutError, PageError):
-                            await ctx.send('**Timed out.**')
+                                await ctx.reply(repr(e))
+                                raise e
                     else:
-                        await ctx.send('**Server not found.**')
+                        await ctx.reply('**Server not found.**')
                 else:
-                    await ctx.send('**Please specify a server after the command.**')
+                    await ctx.reply('**Please specify a server after the command.**')
 
             # elif command == 'help':
             elif command == 'cleanup':
                 """Cleanups all browser instance"""
 
-                await self.server.cleanup()
-                self.server = None
-                await ctx.send('Cleanup successful.')
+                await specifiedServer.cleanup()
+                specifiedServer = None
+                await ctx.reply('Cleanup successful.')
 
             else:
                 """If no command match"""
 
-                await ctx.send('Invalid command.')
+                await ctx.reply('Invalid command.')
 
     @minecraft.before_invoke
     async def ensureBrowserInstance(self, ctx: Context):
-        if self.server is None:
-            async with ctx.channel.typing():
-                self.server = await Aternos.create(self.config['loginInfo']['username'], self.config['loginInfo']['password'])
+        if ctx.channel.id == 765130597843861516:
+            if self.secretserver is None:
+                async with ctx.typing():
+                    self.secretserver = await AternosList.create(self.config['Typhen']['username'], self.config['Typhen']['password'])
+        else:
+            if self.server is None:
+                async with ctx.typing():
+                    self.server = await AternosList.create(self.config['Biblion']['username'], self.config['Biblion']['password'])
 
 
 def setup(client):
