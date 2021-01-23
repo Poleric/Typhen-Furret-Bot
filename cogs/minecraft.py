@@ -103,28 +103,27 @@ class AternosServer:
                     await btn_red.click()
                 except (ElementHandleError, PageError):
                     pass
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)
             # Check if successfully opened
             status: Status = await self.getStatus()
             if str(status) == 'Offline':
-                raise StartupError('**Server not started.**')
+                raise StartupError('Server not started.')
             else:
-                if str(status) == 'Waiting in queue':
-                    self.confirmation.start()
+                self.confirmation.start()
         else:
-            raise ServerStatusError('**Server is not offline.**')
+            raise ServerStatusError('Server is not offline.')
 
     async def stopServer(self):
         if self.page.url != 'https://aternos.org/server/':
             navigationPromise = asyncio.ensure_future(self.page.waitForNavigation())
             await self.page.goto('https://aternos.org/server/')
             await navigationPromise
-        if str(await self.getStatus()) in ('Online', 'Starting'):
+        if str(await self.getStatus()) in ('Online', 'Starting ...', 'Waiting in queue'):
             await self.page.click('#stop')
             self.confirmation.cancel()
             self.remindOnStart.cancel()
         else:
-            raise ServerStatusError('**Server is not online.**')
+            raise ServerStatusError('Server is not online.')
 
     async def restartServer(self):
         if self.page.url != 'https://aternos.org/server/':
@@ -134,7 +133,7 @@ class AternosServer:
         if str(await self.getStatus()) == 'Online':
             await self.page.click('#restart')
         else:
-            raise ServerStatusError('**Server is not online.**')
+            raise ServerStatusError('Server is not online.')
 
     async def confirmServer(self):
         if self.page.url != 'https://aternos.org/server/':
@@ -171,10 +170,10 @@ class AternosServer:
             await ctx.reply(f'`{serverIP}` **is now online.**')
             self.remindOnStart.cancel()
 
-    @tasks.loop(seconds=10.0)
+    @tasks.loop(seconds=10)
     async def confirmation(self):
         confirmationStatus: bool = await self.confirmServer()
-        if confirmationStatus:
+        if confirmationStatus or await self.getStatus() == 'Online':
             self.confirmation.cancel()
 
 
@@ -310,11 +309,8 @@ class Minecraft(commands.Cog):
                 if arg is not None:
                     server: AternosServer = await specifiedServer.getServer(arg)
                     if server is not None:
-                        try:
-                            statusEmbed: Embed = await server.createStatusEmbed()
-                            await ctx.reply(embed=statusEmbed)
-                        except (TimeoutError, PageError):
-                            await ctx.reply('**Timed out.**')
+                        statusEmbed: Embed = await server.createStatusEmbed()
+                        await ctx.reply(embed=statusEmbed)
                     else:
                         await ctx.reply('**Server not found.**')
                 else:
@@ -326,16 +322,9 @@ class Minecraft(commands.Cog):
                 if arg is not None:
                     server: AternosServer = await specifiedServer.getServer(arg)
                     if server is not None:
-                        try:
-                            await server.startServer()
-                            await ctx.reply('**Server starting.**')
-                            server.remindOnStart.start(ctx=ctx)
-                        except Exception as e:
-                            if isinstance(e, StartupError) or isinstance(e, ServerStatusError):
-                                await ctx.reply(str(e))
-                            else:
-                                await ctx.reply(repr(e))
-                                raise e
+                        await server.startServer()
+                        await ctx.reply('**Server starting.**')
+                        server.remindOnStart.start(ctx=ctx)
                     else:
                         await ctx.reply('**Server not found.**')
                 else:
@@ -347,15 +336,8 @@ class Minecraft(commands.Cog):
                 if arg is not None:
                     server: AternosServer = await specifiedServer.getServer(arg)
                     if server is not None:
-                        try:
-                            await server.stopServer()
-                            await ctx.reply('**Server closing.**')
-                        except Exception as e:
-                            if isinstance(e, ServerStatusError):
-                                await ctx.reply(str(e))
-                            else:
-                                await ctx.reply(repr(e))
-                                raise e
+                        await server.stopServer()
+                        await ctx.reply('**Server closing.**')
                     else:
                         await ctx.reply('**Server not found.**')
                 else:
@@ -367,16 +349,23 @@ class Minecraft(commands.Cog):
                 if arg is not None:
                     server: AternosServer = await specifiedServer.getServer(arg)
                     if server is not None:
-                        try:
-                            await server.restartServer()
-                            await ctx.reply('**Server restarting.**')
-                            server.remindOnStart.start(ctx=ctx)
-                        except Exception as e:
-                            if isinstance(e, ServerStatusError):
-                                await ctx.reply(str(e))
-                            else:
-                                await ctx.reply(repr(e))
-                                raise e
+                        await server.restartServer()
+                        await ctx.reply('**Server restarting.**')
+                        server.remindOnStart.start(ctx=ctx)
+                    else:
+                        await ctx.reply('**Server not found.**')
+                else:
+                    await ctx.reply('**Please specify a server after the command.**')
+
+            elif command == 'confirm':
+                """Confirm server"""
+
+                if arg is not None:
+                    server: AternosServer = await specifiedServer.getServer(arg)
+                    if server is not None:
+                        server.confirmation.start()
+                        await ctx.reply('**Waiting for queue to confirm.**')
+                        server.remindOnStart.start(ctx=ctx)
                     else:
                         await ctx.reply('**Server not found.**')
                 else:
@@ -386,14 +375,23 @@ class Minecraft(commands.Cog):
             elif command == 'cleanup':
                 """Cleanups all browser instance"""
 
-                await specifiedServer.cleanup()
-                specifiedServer = None
+                if self.server == specifiedServer:
+                    await specifiedServer.cleanup()
+                    self.server = None
+                else:
+                    await specifiedServer.cleanup()
+                    self.secretserver = None
                 await ctx.reply('Cleanup successful.')
 
             else:
                 """If no command match"""
 
                 await ctx.reply('Invalid command.')
+
+    @minecraft.error
+    async def minecraft_error(self, ctx, error):
+        await ctx.send('`{!s}`'.format(error))
+        raise error
 
     @minecraft.before_invoke
     async def ensureBrowserInstance(self, ctx: Context):
