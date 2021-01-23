@@ -1,16 +1,16 @@
 import json
 
+from typing import Optional
+
 import random
 
 import aiofiles
 
-import discord
-from discord import File
-from discord import Embed
+from discord import Message, Member, File, Embed
 from discord.ext import commands
+from discord.ext.commands import Context
 from discord.ext.commands import has_permissions
-from discord.ext.commands import MissingPermissions
-from discord.ext.commands.errors import MissingRequiredArgument
+from discord.ext.commands.errors import MissingRequiredArgument, MissingPermissions
 
 
 class Fun(commands.Cog):
@@ -31,7 +31,7 @@ class Fun(commands.Cog):
             self.server_config = json.load(data)
 
     @commands.Cog.listener()
-    async def on_message(self, msg: discord.Message):
+    async def on_message(self, msg: Message):
 
         # Check author is bot or not
         if not msg.author.bot:
@@ -66,7 +66,6 @@ class Fun(commands.Cog):
 
                     # Find if cooking related word is before 'furret'
                     if msg_contents[index - 1] in self.config['trigger words']:
-
                         # Add user id to ["bad user"]
                         self.config["bad users"].append(msg.author.id)
 
@@ -76,59 +75,53 @@ class Fun(commands.Cog):
 
     @commands.command()
     @has_permissions(manage_messages=True)
-    async def replybot(self, ctx: commands.Context):
+    async def replybot(self, ctx: Context):
         """Toggle on or off replybot function"""
 
         if not self.replybot:
             self.config['reply bot'] = True
             with open('./config/fun.json', 'w') as f:
                 json.dump(self.config, f, indent=2)
-            await ctx.send('Replybot toggled on')
+            await ctx.reply('Replybot toggled on')
         else:
             self.config['reply bot'] = False
             with aiofiles.open('./config/fun.json', 'w') as f:
                 json.dump(self.config, f, indent=2)
-            await ctx.send('Replybot toggled off')
+            await ctx.reply('Replybot toggled off')
 
     @replybot.error
     async def replybot_error(self, ctx, error):
 
         # Missing Permission
         if isinstance(error, MissingPermissions):
-            await ctx.send("{} ignored orders!".format('Furret'))
+            await ctx.reply("{} ignored orders!".format('Furret'))
 
     @commands.command()
-    async def send(self, ctx: commands.Context, num: str, *, msg: str = None):
+    async def send(self, ctx: Context, num: Optional[int] = 1, *, msg: str):
         """Makes furret say whatever you want
         You can specify how many times you want it to repeat
         by typing a number before the sentence.
         Max: 20 times.
         """
 
-        if num.isdecimal():
-            if int(num) > 20:
-                num = 20
-            for i in range(int(num)):
-                await ctx.send(msg)
-        else:
-            if msg is None:
-                await ctx.send(num)
-            else:
-                await ctx.send(f'{num} {msg}')
+        if num > 20:
+            num = 20
+        for i in range(num):
+            await ctx.send(msg)
 
     @commands.command()
-    async def approval(self, ctx: commands.Context):
+    async def approval(self, ctx: Context):
         """Get approval from furret"""
 
         # Check whether author have antagonized furret before
         if ctx.author.id in self.config['bad users']:
-            await ctx.send(random.choice(self.config['choices']['bad'] + self.config['choices']['very bad']))
+            await ctx.reply(random.choice(self.config['choices']['bad'] + self.config['choices']['very bad']))
             del self.config['bad users'][self.config['bad users'].index(ctx.author.id)]
         else:
-            await ctx.send(random.choice(self.config['choices']['good'] + self.config['choices']['bad']))
+            await ctx.reply(random.choice(self.config['choices']['good'] + self.config['choices']['bad']))
 
     @commands.command(aliases=['uwu', 'uwo', 'owu'])
-    async def owo(self, ctx: commands.Context, *, msg: str):
+    async def owo(self, ctx: Context, *, msg: str):
         """Owo-fy any words or sentences"""
 
         translated = ""
@@ -146,10 +139,10 @@ class Fun(commands.Cog):
                 translated += random.choice(fuwwy_faces) + letter
             else:
                 translated += letter
-        await ctx.send(translated)
+        await ctx.reply(translated)
 
     @owo.error
-    async def owo_error(self, ctx: commands.Context, error):
+    async def owo_error(self, ctx: Context, error):
 
         # Missing Argument (msg)
         if isinstance(error, MissingRequiredArgument):
@@ -157,36 +150,36 @@ class Fun(commands.Cog):
             with open('./config/server.json', 'r') as data:
                 self.server_config = json.load(data)
             owo_help.add_field(name='Syntax', value='{}owo [message]'.format(self.server_config['prefix']), inline=True)
-            await ctx.send(embed=owo_help)
+            await ctx.reply(embed=owo_help)
 
     @commands.command(aliases=['hewwo', 'hello', 'hi'])
-    async def greet(self, ctx: commands.Context):
+    async def greet(self, ctx: Context):
         """Greet furret"""
 
         greets = ['Hewwo!', 'Hi', 'Hello']
-        await ctx.send(random.choice(greets))
+        await ctx.reply(random.choice(greets))
 
     @commands.command()
-    async def pick(self, ctx: commands.Context, num1: int, num2: int):
+    async def pick(self, ctx: Context, num1: int, num2: int):
         """Let furret pick a random number between two number"""
 
-        await ctx.send(str(random.randint(num1, num2)))
+        await ctx.reply(str(random.randint(num1, num2)))
 
     @commands.command(aliases=['choose'])
-    async def choice(self, ctx: commands.Context, *, choices):
+    async def choice(self, ctx: Context, *choices):
         """Let furret choose from selections"""
 
-        await ctx.send(random.choice(choices.split()))
+        await ctx.reply(random.choice(choices))
 
     @commands.command(aliases=['goobye', 'bye'])
-    async def farewell(self, ctx: commands.Context):
+    async def farewell(self, ctx: Context):
         """Say goodbye to furret"""
 
         farewells = ['Goodbye!', 'Cya!', 'Bye!']
-        await ctx.send(random.choice(farewells))
+        await ctx.reply(random.choice(farewells))
 
     @commands.command(aliases=['walk'])
-    async def walcc(self, ctx: commands.Context, suffix: str = None):
+    async def walcc(self, ctx: Context, suffix: str = None):
         """Furret will walk
 
         You can specify how you want furret to walk by specifying
@@ -198,51 +191,51 @@ class Fun(commands.Cog):
 
         if suffix is not None and suffix.lower() in ('gif', 'gif2', 'emote', 'c', 'e', 'f'):
             if suffix.lower() == 'gif':
-                await ctx.send(file=File('./media/furret_walcc.gif'))
+                await ctx.reply(file=File('./media/furret_walcc.gif'))
             elif suffix.lower() == 'gif2':
-                await ctx.send('https://tenor.com/view/furret-walk-fast-speed-space-gif-17881426')
+                await ctx.reply('https://tenor.com/view/furret-walk-fast-speed-space-gif-17881426')
             elif suffix.lower() == 'emote':
-                await ctx.send('<a:walk:776008302210973707>' * random.randint(1, 10))
+                await ctx.reply('<a:walk:776008302210973707>' * random.randint(1, 10))
             elif suffix.lower() == 'c':
-                await ctx.send(f'{"<a:walk:776008302210973707>" * 6}\n'
-                               f'{"<a:walk:776008302210973707>" * 6}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n'
-                               f'{"<a:walk:776008302210973707>" * 6}\n'
-                               f'{"<a:walk:776008302210973707>" * 6}\n')
+                await ctx.reply(f'{"<a:walk:776008302210973707>" * 6}\n'
+                                f'{"<a:walk:776008302210973707>" * 6}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n'
+                                f'{"<a:walk:776008302210973707>" * 6}\n'
+                                f'{"<a:walk:776008302210973707>" * 6}\n')
             elif suffix.lower() == 'e':
-                await ctx.send(f'{"<a:walk:776008302210973707>" * 6}\n'
-                               f'{"<a:walk:776008302210973707>" * 6}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n'
-                               f'{"<a:walk:776008302210973707>" * 6}\n'
-                               f'{"<a:walk:776008302210973707>" * 6}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n'
-                               f'{"<a:walk:776008302210973707>" * 6}\n'
-                               f'{"<a:walk:776008302210973707>" * 6}\n')
+                await ctx.reply(f'{"<a:walk:776008302210973707>" * 6}\n'
+                                f'{"<a:walk:776008302210973707>" * 6}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n'
+                                f'{"<a:walk:776008302210973707>" * 6}\n'
+                                f'{"<a:walk:776008302210973707>" * 6}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n'
+                                f'{"<a:walk:776008302210973707>" * 6}\n'
+                                f'{"<a:walk:776008302210973707>" * 6}\n')
             elif suffix.lower() == 'f':
-                await ctx.send(f'{"<a:walk:776008302210973707>" * 6}\n'
-                               f'{"<a:walk:776008302210973707>" * 6}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n'
-                               f'{"<a:walk:776008302210973707>" * 6}\n'
-                               f'{"<a:walk:776008302210973707>" * 6}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n'
-                               f'{"<a:walk:776008302210973707>" * 2}\n')
+                await ctx.reply(f'{"<a:walk:776008302210973707>" * 6}\n'
+                                f'{"<a:walk:776008302210973707>" * 6}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n'
+                                f'{"<a:walk:776008302210973707>" * 6}\n'
+                                f'{"<a:walk:776008302210973707>" * 6}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n'
+                                f'{"<a:walk:776008302210973707>" * 2}\n')
         else:
             if (r1 := random.randint(1, 3)) == 1:
-                await ctx.send(file=File('./media/furret_walcc.gif'))
+                await ctx.reply(file=File('./media/furret_walcc.gif'))
             elif r1 == 2:
-                await ctx.send('https://tenor.com/view/furret-walk-fast-speed-space-gif-17881426')
+                await ctx.reply('https://tenor.com/view/furret-walk-fast-speed-space-gif-17881426')
             elif r1 == 3:
-                await ctx.send('<a:walk:776008302210973707>' * random.randint(1, 10))
+                await ctx.reply('<a:walk:776008302210973707>' * random.randint(1, 10))
 
 
 def setup(client):
