@@ -2,12 +2,9 @@
 import typing
 
 # Classes
-from datetime import datetime
-from datetime import timedelta
-from discord.ext import commands
-from discord import VoiceChannel
-from discord import Member
-from discord.ext import tasks
+from datetime import datetime, timedelta
+from discord import Member, VoiceChannel
+from discord.ext import commands, tasks
 from discord.ext.commands import Context
 
 # Methods
@@ -49,7 +46,6 @@ class SilencedList:
         return self.list[item]
 
     def __delitem__(self, key):
-        print('deleted')
         self.list[key].ensureSilenced.cancel()
         del self.list[key]
 
@@ -144,10 +140,11 @@ class Administration(commands.Cog):
                     self.silenced.add(member, now, duration, ctx.guild.afk_channel, ' '.join(reason))
                 await ctx.reply(f'***NUKE BONK!!!*** Everyone is bonked to {ctx.guild.afk_channel.mention}, for {format_timespan(duration.total_seconds())}')
             else:
-                for member in mentions:
-                    now = datetime.now()
-                    self.silenced.add(member, now, duration, ctx.guild.afk_channel, ' '.join(reason))
-                await ctx.reply(f'***BONK!!!*** Go to {ctx.guild.afk_channel.mention}, {", ".join(x.mention for x in mentions)} for {format_timespan(duration.total_seconds())}.')
+                if mentions:
+                    for member in mentions:
+                        now = datetime.now()
+                        self.silenced.add(member, now, duration, ctx.guild.afk_channel, ' '.join(reason))
+                    await ctx.reply(f'***BONK!!!*** Go to {ctx.guild.afk_channel.mention}, {", ".join(x.mention for x in mentions)} for {format_timespan(duration.total_seconds())}.')
         else:
             await ctx.reply('No inactive channel to send to.')
 
@@ -159,12 +156,12 @@ class Administration(commands.Cog):
             self.silenced.clear()
             await ctx.reply('Everyone is released.')
         else:
-            released = []
-            for member in mentions:
-                if self.silenced.remove(member):
-                    released.append(member)
-            await ctx.reply(f'{", ".join(x.mention for x in released)} is released.')
-
+            if mentions:
+                released = []
+                for member in mentions:
+                    if self.silenced.remove(member):
+                        released.append(member)
+                await ctx.reply(f'{", ".join(x.mention for x in released)} is released.')
 
 
 def setup(client):
