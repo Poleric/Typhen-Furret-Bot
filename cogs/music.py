@@ -11,10 +11,17 @@ from random import shuffle
 from youtubesearchpython import SearchVideos
 
 import discord
+from discord import FFmpegPCMAudio, PCMVolumeTransformer
 from discord.ext import commands
 
 
-class YTDLSource(discord.PCMVolumeTransformer):
+ffmpeg_options = {
+        'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+        'options': '-vn'
+    }
+
+
+class YTDLSource:
     # Suppress noise about console usage from errors
     youtube_dl.utils.bug_reports_message = lambda: ''
 
@@ -31,11 +38,6 @@ class YTDLSource(discord.PCMVolumeTransformer):
         'source_address': '0.0.0.0'  # bind to ipv4 since ipv6 addresses cause issues sometimes
     }
 
-    ffmpeg_options = {
-        'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-        'options': '-vn'
-    }
-
     ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
 
     @classmethod
@@ -50,12 +52,11 @@ class YTDLSource(discord.PCMVolumeTransformer):
         if 'entries' in data:
             queue = [Playlist(data)]
             for entry in data['entries']:
-                queue.append(Song(discord.FFmpegPCMAudio(entry.get('url'), **cls.ffmpeg_options), data=entry,
-                                  requester=requester))
+                queue.append(Song(data=entry, requester=requester))
 
             return queue
         else:
-            return Song(discord.FFmpegPCMAudio(data.get('url'), **cls.ffmpeg_options), data=data, requester=requester)
+            return Song(data=data, requester=requester)
 
 
 class Playlist:
@@ -77,10 +78,10 @@ class Playlist:
 
 class Song:
 
-    def __init__(self, source, *, data, requester: discord.User):
-        self.source = discord.PCMVolumeTransformer(source)
+    def __init__(self, *, data, requester: discord.User):
         self.data = data
         self.title = data.get('title')
+        self.url = data.get('url')
         self.webpage_url = data.get('webpage_url')
         self.uploader = data.get('uploader')
         self.thumbnail = data.get('thumbnails')[0].get('url')
@@ -155,7 +156,7 @@ class Queue:
     def play(self):
         if self.vc is not None:
             try:
-                self.vc.play(self._entries[0].source, after=self.play_next)
+                self.vc.play(PCMVolumeTransformer(FFmpegPCMAudio(self._entries[0].url, **ffmpeg_options)), after=self.play_next)
                 self.playing = True
                 if not self.loop_song:
                     self._duration -= self._entries[0].duration
@@ -272,16 +273,16 @@ class Music(commands.Cog):
                                 queue.add_song(song)
 
                 if playlist:
-                    await ctx.send(embed=sources[0].create_embed())
+                    await ctx.reply(embed=sources[0].create_embed())
 
                 if not queue.playing:
                     queue.play()
-                    await ctx.send(f'**Now playing:** `{queue[0].title}`')
+                    await ctx.reply(f'**Now playing:** `{queue[0].title}`')
                 elif not playlist:
-                    await ctx.send(
+                    await ctx.reply(
                         embed=sources.create_embed().add_field(name='Position', value=str(len(queue) - 1), inline=True))
             else:
-                await ctx.send('**No result found.**')
+                await ctx.reply('**No result found.**')
 
     @commands.command()
     async def search(self, ctx, *, query):
@@ -300,7 +301,7 @@ class Music(commands.Cog):
                                     inline=False)
                 embed.add_field(name='\u200b', value='**Reply `cancel` to cancel search.**', inline=False)
 
-        msg = await ctx.send(embed=embed)
+        msg = await ctx.reply(embed=embed)
 
         def check(message):
             return message.author == ctx.author and (message.content in numbers or message.content == 'cancel')
@@ -333,9 +334,9 @@ class Music(commands.Cog):
 
         queue = self.queues[ctx.guild.id]
         if ctx.voice_client is None:
-            await ctx.send('**Furret is not playing anything.**')
+            await ctx.reply('**Furret is not playing anything.**')
         else:
-            msg = await ctx.send(embed=queue.create_embed())
+            msg = await ctx.reply(embed=queue.create_embed())
             if (max_page := math.ceil((len(queue) - 1) / 10)) > 1:
                 current_page = 1
                 await msg.add_reaction('⬅️')
@@ -365,24 +366,24 @@ class Music(commands.Cog):
         """Changes the song's volume"""
 
         if ctx.voice_client is None:
-            return await ctx.send("**Not connected to a voice channel.**")
+            return await ctx.reply("**Not connected to a voice channel.**")
 
         ctx.voice_client.source.volume = volume / 100
-        await ctx.send("**Changed volume to {}%**".format(volume))
+        await ctx.reply("**Changed volume to {}%**".format(volume))
 
     @commands.command()
     async def shuffle(self, ctx):
         """Shuffles the queue"""
 
         queue = self.queues[ctx.guild.id]
-        await ctx.send(queue.shuffle())
+        await ctx.reply(queue.shuffle())
 
     @commands.command()
     async def clear(self, ctx):
         """Clears the queue"""
         queue = self.queues[ctx.guild.id]
 
-        await ctx.send(queue.clear())
+        await ctx.reply(queue.clear())
 
     @commands.command()
     async def pause(self, ctx):
@@ -390,9 +391,9 @@ class Music(commands.Cog):
 
         if not ctx.voice_client.is_paused():
             ctx.voice_client.pause()
-            await ctx.send('**Paused.**')
+            await ctx.reply('**Paused.**')
         elif ctx.voice_client.is_paused():
-            await ctx.send('**Already paused.**')
+            await ctx.reply('**Already paused.**')
 
     @commands.command()
     async def resume(self, ctx):
@@ -400,46 +401,47 @@ class Music(commands.Cog):
 
         if ctx.voice_client.is_paused():
             ctx.voice_client.resume()
-            await ctx.send('**Resumed.**')
+            await ctx.reply('**Resumed.**')
         elif not ctx.voice_client.is_paused():
-            await ctx.send('**Already playing.**')
+            await ctx.reply('**Already playing.**')
 
     @commands.command(aliases=['s'])
     async def skip(self, ctx):
         """Skip the current song"""
 
         ctx.voice_client.stop()
-        await ctx.send('**Skipped.**')
+        await ctx.reply('**Skipped.**')
 
     @commands.command()
-    async def loop(self, ctx):
+    async def loop(self, ctx, arg):
         """Loop queue"""
 
         queue = self.queues[ctx.guild.id]
-        # if object is None:
-        #     await ctx.send(f'Loop queue: {"on" if queue.loop_queue else "off"}\n'
-        #                    f'Loop current song: {"on" if queue.loop_song else "off"}')
-        # elif object.lower() == 'queue':
-        if queue.loop_queue:
-            queue.loop_queue = False
-            await ctx.send('**Toggled off**')
-        else:
-            queue.loop_queue = True
-            await ctx.send('**Toggled on**')
-        # elif object.lower() == 'song':
-        #     if queue.loop_song:
-        #         queue.loop_song = False
-        #         await ctx.send('**Toggled off**')
-        #     else:
-        #         queue.loop_song = True
-        #         await ctx.send('**Toggled on**')
+        if object is None:
+            await ctx.reply(f'Loop queue: {"on" if queue.loop_queue else "off"}\n'
+                           f'Loop current song: {"on" if queue.loop_song else "off"}'
+                            f'Specify `queue` or `song` to loop as the argument.')
+        elif arg.lower() == 'queue':
+            if queue.loop_queue:
+                queue.loop_queue = False
+                await ctx.reply('**Toggled off**')
+            else:
+                queue.loop_queue = True
+                await ctx.reply('**Toggled on**')
+        elif arg.lower() == 'song':
+            if queue.loop_song:
+                queue.loop_song = False
+                await ctx.reply('**Toggled off**')
+            else:
+                queue.loop_song = True
+                await ctx.reply('**Toggled on**')
 
     @commands.command()
     async def move(self, ctx, song_index: int, new_index: int):
         """Moves song in a specific position to another position"""
 
         queue = self.queues[ctx.guild.id]
-        await ctx.send(queue.move_song(song_index=song_index, new_index=new_index))
+        await ctx.reply(queue.move_song(song_index=song_index, new_index=new_index))
 
     @commands.command()
     async def remove(self, ctx, song_index: int):
@@ -449,9 +451,9 @@ class Music(commands.Cog):
 
         removed = queue.remove_song_at_index(song_index)
         if removed is not None:
-            await ctx.send(f'**Removed** `{removed.title}`')
+            await ctx.reply(f'**Removed** `{removed.title}`')
         else:
-            await ctx.send(f'**There\'s no song in position** `{song_index}`')
+            await ctx.reply(f'**There\'s no song in position** `{song_index}`')
 
     @commands.command()
     async def stop(self, ctx):
@@ -470,7 +472,7 @@ class Music(commands.Cog):
             if ctx.voice_client is None:
                 queue.vc = await ctx.author.voice.channel.connect()
         else:
-            await ctx.send("**You are not connected to a voice channel.**")
+            await ctx.reply("**You are not connected to a voice channel.**")
             raise commands.CommandError("**Author not connected to a voice channel.**")
         # elif ctx.voice_client.is_playing:
         #     ctx.voice_client.stop()
