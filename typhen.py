@@ -119,7 +119,7 @@ async def reload(ctx, extension):
 ignore = ['']
 for file in os.listdir('./cogs/'):
     try:
-        if file.endswith('.py') and not file.startswith('test'):
+        if file.endswith('.py'):
             bot.load_extension('cogs.{}'.format(file[:-3]))
     except ExtensionFailed:
         traceback.print_exc()
