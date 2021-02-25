@@ -6,7 +6,7 @@ import random
 
 import aiofiles
 
-from discord import Message, Member, File, Embed
+from discord import Message, File, Embed, TextChannel
 from discord.ext import commands
 from discord.ext.commands import Context
 from discord.ext.commands import has_permissions
@@ -53,11 +53,11 @@ class Fun(commands.Cog):
                 if reply:
 
                     # Randomly reply
-                    if random.randint(1, 1000) <= 42:  # 4.2 %
+                    if random.randint(1, 100) <= 1:  # 1 %
                         if random.randint(1, 100) == 1:  # 1 %
                             await msg.channel.send('*happy furret noises*')
                         else:  # 4.2 %
-                            await msg.channel.send(msg.content)
+                            await msg.channel.send(f'{msg.content}')
 
             """Angry Furret"""
 
@@ -97,17 +97,20 @@ class Fun(commands.Cog):
             await ctx.reply("{} ignored orders!".format('Furret'))
 
     @commands.command()
-    async def send(self, ctx: Context, num: Optional[int] = 1, *, msg: str):
+    async def send(self, ctx: Context, num: Optional[int] = 1, *, msg: str = None):
         """Makes furret say whatever you want
         You can specify how many times you want it to repeat
         by typing a number before the sentence.
         Max: 20 times.
         """
 
-        if num > 20:
-            num = 20
-        for i in range(num):
-            await ctx.send(msg)
+        files = [await file.to_file() for file in ctx.message.attachments] if ctx.message.attachments else None
+        embeds = ctx.message.embeds[0] if ctx.message.embeds else None
+        if msg or files or embeds:
+            if num > 20:
+                num = 20
+            for i in range(num):
+                await ctx.send(msg, files=files, embed=embeds)
 
     @commands.command()
     async def approval(self, ctx: Context):
