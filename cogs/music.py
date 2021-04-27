@@ -413,13 +413,13 @@ class Music(commands.Cog):
         await ctx.reply('**Skipped.**')
 
     @commands.command()
-    async def loop(self, ctx, arg):
+    async def loop(self, ctx, arg=None):
         """Loop queue"""
 
         queue = self.queues[ctx.guild.id]
-        if object is None:
+        if not arg:
             await ctx.reply(f'Loop queue: {"on" if queue.loop_queue else "off"}\n'
-                           f'Loop current song: {"on" if queue.loop_song else "off"}'
+                            f'Loop current song: {"on" if queue.loop_song else "off"}\n'
                             f'Specify `queue` or `song` to loop as the argument.')
         elif arg.lower() == 'queue':
             if queue.loop_queue:
@@ -463,6 +463,11 @@ class Music(commands.Cog):
 
         queue.stop()
         await ctx.voice_client.disconnect()
+
+    @commands.command()
+    async def fuck(self, ctx, command):
+        if command == 'off':
+            await ctx.invoke(self.bot.get_command('stop'))
 
     @play.before_invoke
     @search.before_invoke
