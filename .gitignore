@@ -128,4 +128,7 @@ dmypy.json
 *.txt
 
 # Login Information
-minecraftserver.json
+mc.json
+
+# Unused Cogs
+.*.py
