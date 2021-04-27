@@ -19,7 +19,6 @@ class Fun(commands.Cog):
         self.bot = client
         with open('./config/server.json', 'r') as data:
             self.server_config = json.load(data)
-
         with open('./config/fun.json', 'r') as data:
             self.config = json.load(data)
 
