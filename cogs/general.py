@@ -1,8 +1,10 @@
 import json
+import filetype
+import io
 
-import discord
+from discord import Member, File
 from discord.ext import commands
-from discord.ext.commands import has_permissions
+from discord.ext.commands import has_permissions, Context
 
 
 class General(commands.Cog):
@@ -27,7 +29,7 @@ class General(commands.Cog):
 
     @commands.command()
     @has_permissions(manage_roles=True)
-    async def prefix(self, ctx: commands.Context, prefix: str):
+    async def prefix(self, ctx: Context, prefix: str):
         """Get or set bot's prefix"""
 
         self.server_config['prefix'] = prefix
@@ -36,6 +38,14 @@ class General(commands.Cog):
         self.bot.command_prefix = prefix
         await self.bot.change_presence(activity=discord.Game('Pokémon | {}help'.format(self.server_config['prefix'])))
         await ctx.reply('Prefix changed to {}'.format(self.server_config['prefix']))
+
+    @commands.command()
+    async def avatar(self, ctx: Context, member: Member = None):
+        if not member:
+            member: Member = ctx.author
+        avatar = await member.avatar_url.read()
+        extension = filetype.guess_extension(avatar)
+        await ctx.reply(file=File(fp=io.BytesIO(avatar), filename=f'{member}.{extension}'))
 
 
 def setup(client):
