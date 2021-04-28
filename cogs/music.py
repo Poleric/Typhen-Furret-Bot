@@ -123,8 +123,10 @@ class Queue:
         return '**Queue shuffled.**'
 
     def clear(self):
+        playing = self._entries.pop(0)
         self._entries.clear()
         self._duration = datetime.timedelta()
+        self._entries.append(playing)
         return '**Queue cleared.**'
 
     def stop(self):
