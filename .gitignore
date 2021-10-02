@@ -127,8 +127,7 @@ dmypy.json
 # Text files
 *.txt
 
-# Login Information
-mc.json
-
 # Unused Cogs
 .*.py
+
+*.bat
