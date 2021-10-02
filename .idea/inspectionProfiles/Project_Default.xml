@@ -8,18 +8,5 @@
         </list>
       </option>
     </inspection_tool>
-    <inspection_tool class="PyUnresolvedReferencesInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <option name="ignoredIdentifiers">
-        <list>
-          <option value="TextPMD.mechanics.*" />
-          <option value="main" />
-          <option value="TextPMD.main.*" />
-          <option value="mechanics" />
-          <option value="int.close" />
-          <option value="int.isdecimal" />
-          <option value="discord.Channel" />
-        </list>
-      </option>
-    </inspection_tool>
   </profile>
 </component>
