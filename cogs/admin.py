@@ -5,7 +5,7 @@ from typing import Optional, Union
 
 # Classes
 from datetime import datetime, timedelta
-from discord import Member, VoiceChannel, Role, TextChannel
+from discord import Member, VoiceChannel, Role, TextChannel, Emoji
 from discord.ext import commands, tasks
 from discord.ext.commands import Context, MissingPermissions
 
@@ -16,10 +16,10 @@ from discord.ext.commands import has_permissions
 
 class Silenced:
 
-    def __init__(self, member: Member, start_time: datetime, duration: timedelta, container, voice_channel: VoiceChannel, reason):
+    def __init__(self, member: Member, voice_channel: VoiceChannel, reason, start_time=None, duration=timedelta(seconds=30), container=None):
         self.member = member
-        self.start_time = start_time
-        self.end_time = start_time + duration
+        self.start_time: datetime = start_time or datetime.now()
+        self.end_time = self.start_time + duration
         self.container = container
         self.ensureSilenced.start(voice_channel=voice_channel)
         self.reason = reason
@@ -33,7 +33,8 @@ class Silenced:
             if self.member.voice is not None and self.member.voice.channel != voice_channel:
                 await self.member.move_to(voice_channel, reason=self.reason)
         else:
-            del self.container[self.container.find(self.member)]
+            if self.container:
+                del self.container[self.container.find(self.member)]
 
 
 class SilencedList:
@@ -68,7 +69,7 @@ class SilencedList:
         if (index := self.find(member)) != -1:
             self[index].end_time += duration
         else:
-            self.list.append(Silenced(member, start_time, duration, self, voice_channel, reason))
+            self.list.append(Silenced(member, voice_channel, reason, start_time, duration, self))
 
     def remove(self, query: Union[Member, str]):
         if (index := self.find(query)) != -1:
@@ -194,7 +195,7 @@ class Administration(commands.Cog):
 
     @commands.command()
     @has_permissions(administrator=True)
-    async def nuke(self, ctx: Context, channel: Optional[TextChannel] = None, countdown: Optional[int] = 30):
+    async def nuke(self, ctx: Context, channel: Optional[Union[TextChannel, VoiceChannel]] = None, countdown: Optional[int] = 30):
         if not channel:
             channel = ctx.channel
         message = await channel.send(f'**NUKING CHANNEL IN {countdown} SECONDS**')
