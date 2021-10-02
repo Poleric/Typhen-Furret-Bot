@@ -1,489 +1,496 @@
-import asyncio
-
-import math
+import json
+import typing
 
 import youtube_dl
+import re
+import math
+import asyncio
+from datetime import timedelta, datetime
+from dataclasses import dataclass
+from collections import deque
+import random
+from enum import Enum
 
-import datetime
-
-from random import shuffle
-
-from youtubesearchpython import SearchVideos
-
-import discord
-from discord import FFmpegPCMAudio, PCMVolumeTransformer
+from discord import User, Member, VoiceChannel, VoiceClient, PCMVolumeTransformer, FFmpegPCMAudio, Embed
 from discord.ext import commands
+from discord.ext.commands.errors import MissingRequiredArgument
 
 
-ffmpeg_options = {
+@dataclass()
+class Song:
+    title: str
+    source_url: str
+    webpage_url: str
+    uploader: str
+    thumbnail_url: str
+    duration: timedelta
+    requester: str | User | Member
+
+    def __str__(self):
+        return self.title
+
+    @classmethod
+    def from_data(cls, data, requester):
+        return cls(data['title'], data['url'], data['webpage_url'], data['uploader'],
+                   data['thumbnails'][0]['url'], timedelta(seconds=data['duration']), requester)
+
+
+@dataclass()
+class Playlist:
+    title: str
+    songs: list[Song]
+    webpage_url: str
+    uploader: str
+    requester: str | User | Member
+
+    def __str__(self):
+        return self.title
+
+    def __iter__(self):
+        return self.songs
+
+    def __getitem__(self, item):
+        return self.songs[item]
+
+    @classmethod
+    def from_data(cls, data, requester):
+        return cls(data['title'], [Song.from_data(song_data, requester) for song_data in data['entries']],
+                   data['webpage_url'], data['uploader'], requester)
+
+
+async def search(query: str, requester, *, number_of_results: int = None, loop=None) -> Song | Playlist | list[Song] | None:
+    youtube_dl.utils.bug_reports_message = lambda: ''
+    ydl_options = {
+        'format': 'bestaudio/best',
+        'quiet': True,
+        'no_warnings': True
+    }
+    ydl = youtube_dl.YoutubeDL(ydl_options)
+
+    loop = loop or asyncio.get_event_loop()
+    # direct search from url
+    if re.match(r'https?://.*youtu.*/playlist\?list=.*', query):  # yt playlist url pattern
+        data = await loop.run_in_executor(None, lambda: ydl.extract_info(query, download=False))
+        return Playlist.from_data(data, requester)
+    elif re.match(r'https?://.*youtu.*/.*', query):  # yt video url pattern
+        data = await loop.run_in_executor(None, lambda: ydl.extract_info(query, download=False))
+        return Song.from_data(data, requester)
+
+    # non url query
+    else:
+        # search from query
+        results = await loop.run_in_executor(None, lambda: ydl.extract_info(f'ytsearch{number_of_results or 1}:{query}', download=False))
+        if results['entries']:
+            if not number_of_results:
+                return Song.from_data(results['entries'][0], requester)
+            else:
+                return [Song.from_data(data, requester) for data in results['entries']]
+        else:
+            return
+
+
+class LoopType(Enum):
+    NO_LOOP = "Looping: off"
+    LOOP_QUEUE = "Looping: queue"
+    LOOP_SONG = "Looping: song"
+
+
+@dataclass()
+class Queue:
+    class NotConnectedToVoice(Exception):
+        pass
+
+    class PageError(Exception):
+        pass
+
+    _songs: deque[Song] = deque()
+    voice_client: VoiceClient = None
+    # Queue options
+    _playing: Song = None
+    _volume: int = 100  # 1 - 100
+    loop: LoopType = LoopType.NO_LOOP
+
+    ffmpeg_options = {
         'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
         'options': '-vn'
     }
 
+    @property
+    def duration(self) -> timedelta:
+        """Return the a timedelta of the total duration of all the songs in the queue"""
 
-class YTDLSource:
-    # Suppress noise about console usage from errors
-    youtube_dl.utils.bug_reports_message = lambda: ''
+        return sum((song.duration for song in self._songs), timedelta())
 
-    ytdl_format_options = {
-        'format': 'bestaudio/best',
-        'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-        'restrictfilenames': True,
-        'nocheckcertificate': True,
-        'ignoreerrors': False,
-        'logtostderr': False,
-        'quiet': True,
-        'no_warnings': True,
-        'default_search': 'auto',
-        'source_address': '0.0.0.0'  # bind to ipv4 since ipv6 addresses cause issues sometimes
-    }
+    @property
+    def max_page(self):
+        return math.ceil(len(self._songs) / 10) or 1
 
-    ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
+    def get_volume(self) -> int:
+        return self._volume
 
-    @classmethod
-    async def search(cls, query: str, number_of_results: int):
-        return SearchVideos(query, offset=1, mode='dict', max_results=number_of_results).result().get('search_result')
+    def set_volume(self, volume: int) -> None:
+        self._volume = volume
+        if self.voice_client.source:
+            self.voice_client.source.volume = volume / 100
 
-    @classmethod
-    async def from_url(cls, query, *, loop=None, requester: discord.User):
-        loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: cls.ytdl.extract_info(query, download=False))
-
-        if 'entries' in data:
-            queue = [Playlist(data)]
-            for entry in data['entries']:
-                queue.append(Song(data=entry, requester=requester))
-
-            return queue
-        else:
-            return Song(data=data, requester=requester)
-
-
-class Playlist:
-
-    def __init__(self, data):
-        self.data = data
-        self.length = len(data.get('entries'))
-        self.title = data['title']
-        self.webpage_url = data['webpage_url']
-        self.thumbnail = data['entries'][0]['thumbnails'][0].get('url')
-
-    def create_embed(self):
-        embed = discord.Embed(title=self.title, color=0xf0d4b1, url=self.webpage_url)
-        embed.set_author(name='Playlist Added')
-        embed.set_thumbnail(url=self.thumbnail)
-        embed.add_field(name='Enqueued', value=f'{self.length} songs', inline=True)
-        return embed
-
-
-class Song:
-
-    def __init__(self, *, data, requester: discord.User):
-        self.data = data
-        self.title = data.get('title')
-        self.url = data.get('url')
-        self.webpage_url = data.get('webpage_url')
-        self.uploader = data.get('uploader')
-        self.thumbnail = data.get('thumbnails')[0].get('url')
-        self.duration = datetime.timedelta(seconds=data.get('duration'))
-        self.requester = requester
-
-    def create_embed(self):
-        embed = discord.Embed(title=self.title, color=0xf0d4b1, url=self.webpage_url)
-        embed.set_author(name='Song Added')
-        embed.set_thumbnail(url=self.thumbnail)
-        embed.add_field(name='Channel', value=self.uploader, inline=True)
-        embed.add_field(name='Duration', value=str(self.duration), inline=True)
-        return embed
-
-
-class Queue:
-
-    def __init__(self):
-        self.vc = None
-        self._entries = list()
-        self.loop_queue = False
-        self.loop_song = False
-        self.playing = False
-        self._duration = datetime.timedelta()
-
-    def __iter__(self):
-        return iter(self._entries)
+    volume = property(get_volume, set_volume)
 
     def __len__(self):
-        return len(self._entries)
+        return len(self._songs)
 
-    def __getitem__(self, key):
-        return self._entries[key]
+    def __iter__(self):
+        yield from self._songs
 
-    def shuffle(self):
-        playing = self._entries.pop(0)
-        shuffle(self._entries)
-        self._entries.insert(0, playing)
-        return '**Queue shuffled.**'
+    def __getitem__(self, key: int) -> Song:
+        return self._songs[key]
 
-    def clear(self):
-        playing = self._entries.pop(0)
-        self._entries.clear()
-        self._duration = datetime.timedelta()
-        self._entries.append(playing)
-        return '**Queue cleared.**'
+    def __str__(self):
+        return str(self._songs)
 
-    def stop(self):
-        self._entries.clear()
-        self.vc = None
-        self.loop_queue = False
-        self.loop_song = False
-        self._duration = datetime.timedelta()
+    def loop_mode(self, mode: LoopType):
+        if isinstance(mode, LoopType):
+            self.loop = mode
+            return self.loop
 
-    def add_song(self, song: Song, top=False):
-        if not top:
-            self._entries.append(song)
-        else:
-            self._entries.insert(0, song)
-        self._duration += song.duration
+    def add(self, song: Song) -> None:
+        """Append Song into the queue"""
 
-    def remove_song_at_index(self, index: int):
-        if index == 0 or index >= len(self._entries):
-            return None
-        else:
-            song = self._entries.pop(index)
-            self._duration -= song.duration
-            return song
+        self._songs.append(song)
 
-    def move_song(self, song_index: int, new_index: int):
-        self._entries.insert(new_index, self._entries.pop(song_index))
-        return f'**Moved `{self._entries[new_index].title}` to position `{new_index}`**'
+    def add_left(self, song: Song) -> None:
+        """Append left Song into the queue"""
 
-    def play(self):
-        if self.vc is not None:
-            try:
-                self.vc.play(PCMVolumeTransformer(FFmpegPCMAudio(self._entries[0].url, **ffmpeg_options)), after=self.play_next)
-                self.playing = True
-                if not self.loop_song:
-                    self._duration -= self._entries[0].duration
-            except IndexError:
-                pass
+        self._songs.appendleft(song)
+
+    def pop(self, index: int) -> Song:
+        """
+        Pop a song from the specific index in the queue
+        Return Song
+        """
+
+        if index > len(self._songs) - 1:
+            raise IndexError('The song does not exist lmao')
+        self._songs.rotate(-index)
+        popped = self._songs.popleft()
+        self._songs.rotate(index)
+        return popped
+
+    def move(self, starting_index, ending_index):
+        """
+        Move song from starting index to ending index
+        Return moved Song
+        """
+        if starting_index > len(self._songs) - 1:
+            raise IndexError('The song does not exist lmao')
+        self._songs.rotate(1-starting_index)
+        popped = self._songs.popleft()
+        self._songs.rotate(starting_index-ending_index)
+        self._songs.appendleft(popped)
+        self._songs.rotate(ending_index-1)
+
+    def shuffle(self) -> None:
+        """Shuffle queue"""
+
+        random.shuffle(self._songs)
+
+    def clear(self) -> None:
+        """Clear queue"""
+
+        self._songs.clear()
+
+    def play(self) -> None:
+        """Start or resume playing from the queue"""
+
+        if self.voice_client is None:  # Check if theres a voice client in the first place
+            raise self.NotConnectedToVoice('No VoiceClient found')
+        self._playing = self._songs.popleft()
+        self.voice_client.play(
+            PCMVolumeTransformer(FFmpegPCMAudio(self._playing.source_url, **self.ffmpeg_options), self._volume / 100),
+            after=self.play_next)
 
     def play_next(self, error):
-        self.playing = False
-        if error is not None:
-            print(f'Player error: {error}')
-        if self.loop_song:
+        if error:
+            print(f'{datetime.now}: {error=}\n')
+        match self.loop:
+            case LoopType.LOOP_QUEUE:
+                self._songs.append(self._playing)
+            case LoopType.LOOP_SONG:
+                self._songs.appendleft(self._playing)
+        if self._songs:
             self.play()
-        elif self.loop_queue:
-            self.add_song(self._entries.pop(0))
-            self.play()
-        else:
-            if len(self._entries) != 0:
-                del self._entries[0]
-                if len(self._entries) != 0:
-                    self.play()
 
-    def create_embed(self, page: int = 1):
-        if len(self._entries) == 0:
-            embed = discord.Embed(title='Empty queue', color=0xf0d4b1)
-        elif page == 1:
-            embed = discord.Embed(title='Queue', color=0xf0d4b1)
-            for index, song in enumerate(self._entries):
-                if index == 0:
-                    embed.add_field(name='__Now Playing__',
-                                    value=f'[{song.title}]({song.webpage_url}) | `{str(song.duration)}` | `Requested by {song.requester.name}#{song.requester.discriminator}`',
-                                    inline=False)
-                elif index == 1:
-                    embed.add_field(name='__Enqueued__',
-                                    value=f'`{index}.` [{song.title}]({song.webpage_url}) | `{str(song.duration)}` | `Requested by {song.requester.name}#{song.requester.discriminator}`',
-                                    inline=False)
-                elif index <= 10:
-                    embed.add_field(name='\u200b',
-                                    value=f'`{index}.` [{song.title}]({song.webpage_url}) | `{str(song.duration)}` | `Requested by {song.requester.name}#{song.requester.discriminator}`',
-                                    inline=False)
-                else:
-                    break
-            if len(self._entries) > 1:
-                embed.add_field(name='\u200b',
-                                value=f'**Enqueued:** `{len(self._entries) - 1}` songs | **Total duration:** `{self._duration}`',
+    def skip(self):
+        """Skip and return current playing song"""
+        self.voice_client.stop()
+        return self._playing
+
+    def embed(self, page: int = 1) -> Embed:
+        # Error checking
+        if page < 1 or page > self.max_page:
+            raise self.PageError('Page does not exist')
+        embed = Embed(title='Queue', color=0x25fa30)
+        # Shows playing song, only when first "page" of the embed
+        if page == 1:
+            if self._playing:  # Check if theres a playing song
+                embed.add_field(name='__Now Playing__',
+                                value=f'[{self._playing.title}]({self._playing.webpage_url}) | `{self._playing.duration}` | `Requested by {self._playing.requester}`',
                                 inline=False)
-            if (max_page := math.ceil((len(self._entries) - 1) / 10)) < 1:
-                max_page = 1
-            embed.set_footer(text=f'Page {page}/{max_page}')
-        else:
-            embed = discord.Embed(title='Queue', color=0xf0d4b1)
+            else:  # No playing song
+                embed.add_field(name='__Now Playing__',
+                                value='Nothing, try requesting a few songs',
+                                inline=False)
+                return embed
+        # range of 0 | 10 | 20... to 9 | 19 | 29
+        for i in range(10 * (page - 1), 10 * page - 1):
             try:
-                for index in range(1 + 10 * (page - 1), 1 + 10 * page):
-                    song = self._entries[index]
+                if i == 0 or i % 10 == 0:  # Check if its the n0th of elements
+                    embed.add_field(name='__Enqueued__',
+                                    value=f'`{i+1}.` [{self._songs[i].title}]({self._songs[i].webpage_url}) | `{self._songs[i].duration}` | `Requested by {self._songs[i].requester}`',
+                                    inline=False)
+                else:  # Normal song display field
                     embed.add_field(name='\u200b',
-                                    value=f'`{index}.` [{song.title}]({song.webpage_url}) | `{str(song.duration)}` | `Requested by {song.requester.name}#{song.requester.discriminator}`',
+                                    value=f'`{i+1}.` [{self._songs[i].title}]({self._songs[i].webpage_url}) | `{self._songs[i].duration}` | `Requested by {self._songs[i].requester}`',
                                     inline=False)
             except IndexError:
-                pass
-            embed.add_field(name='\u200b',
-                            value=f'**Enqueued:** `{len(self._entries) - 1}` songs | **Total duration:** `{self._duration}`',
-                            inline=False)
-            embed.set_footer(text=f'Page {page}/{math.ceil((len(self._entries) - 1) / 10)}')
+                break
+        embed.set_footer(text=f'Page {page}/{self.max_page} | {self.loop.value} | Duration: {self.duration}')
         return embed
 
 
 class Music(commands.Cog):
 
-    def __init__(self, client):
-        self.bot = client
-        self.queues = dict()
-        for guild in self.bot.guilds:
-            self.queues[guild.id] = Queue()
+    def __init__(self, bot):
+        self.bot = bot
+        self.queues: dict[int, Queue] = {}
 
-    @commands.Cog.listener()
-    async def on_ready(self):
-        for guild in self.bot.guilds:
-            self.queues[guild.id] = Queue()
-
-    @commands.command()
-    async def join(self, ctx, *, channel: discord.VoiceChannel):
+    @commands.command(aliases=['summon'])
+    async def join(self, ctx, channel: VoiceChannel = None):
         """Joins a voice channel"""
+        current_queue = self.queues[ctx.guild.id]
 
-        queue = self.queues[ctx.guild.id]
-        if ctx.voice_client is not None:
-            return await ctx.voice_client.move_to(channel)
+        if not channel:
+            if ctx.author.voice.channel:
+                channel = ctx.author.voice.channel
+            else:
+                await ctx.reply('No voice channel found')
+                return
 
-        queue.vc = await channel.connect()
+        if not current_queue.voice_client:
+            current_queue.voice_client = await channel.connect()
 
     @commands.command(aliases=['p'])
-    async def play(self, ctx, *, url: str):
-        """Plays anything youtube-dl supports"""
+    async def play(self, ctx, *, query: str):
+        """Add and play songs from url or song name"""
+        current_queue = self.queues[ctx.guild.id]
 
-        queue = self.queues[ctx.guild.id]
+        if not ctx.voice_client:
+            await ctx.invoke(self.join)
 
-        async with ctx.channel.typing():
-            url = url.strip('<').strip('>')
-            playlist = False
-            if not url.startswith('https://www.youtube.com/'):
-                query = await YTDLSource.search(url, 1)
-                if len(query) != 0:
-                    url = query[0].get('link')
-                else:
-                    url = None
-            if url is not None:
-                sources = await YTDLSource.from_url(url, requester=ctx.author)
-                if sources is not None:
-                    if isinstance(sources, Song):
-                        queue.add_song(sources)
-                    else:
-                        for index, song in enumerate(sources):
-                            if index == 0:
-                                playlist = True
-                            else:
-                                queue.add_song(song)
+        result = await search(query, ctx.author)
+        match result:
+            case Song():
+                current_queue.add(result)
+                # Song added response
+                if ctx.voice_client.is_playing():  # Check if its playing, reply "song addition to queue" response
+                    embed = Embed(title='Song added', description=f'[{result}]({result.webpage_url})', color=0x33c9a4)
+                    embed.set_thumbnail(url=result.thumbnail_url)
+                    embed.add_field(name='Channel', value=result.uploader)
+                    embed.add_field(name='Duration', value=str(result.duration))
+                    embed.add_field(name='Position in queue', value=str(len(current_queue)))
+                    await ctx.reply(embed=embed)
+            case Playlist():
+                for song in result:
+                    current_queue.add(song)
+                # Playlist added response
+                embed = Embed(title='Playlist Added', description=f'[{result}]({result.webpage_url})', color=0x33c9a4)
+                embed.set_thumbnail(url=result[0].thumbnail_url)
+                embed.add_field(name='Enqueued', value=f'{len(result)} songs')
+                await ctx.reply(embed=embed)
+            case _:
+                # No results response
+                await ctx.reply(f'No results found for {query}')
+                return
 
-                if playlist:
-                    await ctx.reply(embed=sources[0].create_embed())
-
-                if not queue.playing:
-                    queue.play()
-                    await ctx.reply(f'**Now playing:** `{queue[0].title}`')
-                elif not playlist:
-                    await ctx.reply(
-                        embed=sources.create_embed().add_field(name='Position', value=str(len(queue) - 1), inline=True))
-            else:
-                await ctx.reply('**No result found.**')
+        if not ctx.voice_client.is_playing():
+            await ctx.reply(f'Playing `{result}`')
+            current_queue.play()
 
     @commands.command()
-    async def search(self, ctx, *, query):
-        """Yield at most 10 results from youtube"""
+    async def search(self, ctx, number_of_results: typing.Optional[int] = 10, *, query: str):
+        """Shows results from YouTube to choose from, max 10 results"""
+        number_of_results = number_of_results if number_of_results <= 10 else 10
 
-        async with ctx.channel.typing():
-            results = await YTDLSource.search(query, 10)
-            if len(results) != 0:
+        async with ctx.typing():
+            results: list[Song] = await search(query, ctx.author, number_of_results=number_of_results)
 
-                numbers = list()
-                embed = discord.Embed(color=0xf0d4b1)
-                for search in results:
-                    numbers.append(str(search['index'] + 1))
-                    embed.add_field(name='\u200b',
-                                    value=f'`{search.get("index") + 1}.` [{search.get("title")}]({search.get("link")}) | `{search.get("duration")}`',
-                                    inline=False)
-                embed.add_field(name='\u200b', value='**Reply `cancel` to cancel search.**', inline=False)
+        if results:
+            # results embed
+            embed = Embed(color=0x818555)
+            for i, song in enumerate(results, start=1):
+                embed.add_field(name='\u200b',
+                                value=f'`{i}.` [{song.title}]({song.webpage_url}) | `{song.duration}`',
+                                inline=False)
+            embed.add_field(name='\u200b', value='**Reply `cancel` to cancel search.**', inline=False)
 
-        msg = await ctx.reply(embed=embed)
+            msg = await ctx.reply(embed=embed)
 
-        def check(message):
-            return message.author == ctx.author and (message.content in numbers or message.content == 'cancel')
+            # check if the message is by the one who searched and is choosing or cancelling the search
+            def check(message):
+                return message.author == ctx.author and (message.content in map(str, range(1, len(results)+1)) or message.content == 'cancel')
 
-        try:
-            confirmation = await self.bot.wait_for('message', check=check, timeout=30)
-        except asyncio.TimeoutError:
-            await msg.edit(content='Timeout.', embed=None)
-        else:
-            if confirmation.content in numbers:
-                await msg.delete()
-                await ctx.invoke(self.bot.get_command('play'), url=results[int(confirmation.content) - 1].get('link'))
+            try:
+                # wait for response
+                response = await self.bot.wait_for('message', check=check, timeout=30)
+            except asyncio.TimeoutError:  # timeout
+                await msg.edit(content='Timeout', embed=None)
             else:
-                await msg.delete()
-
-    @commands.command(aliases=['fp'])
-    async def force_play(self, ctx):
-        """Force furret to play music in queue when it isn't playing.
-
-        Usually used after furret encounter connection problem and
-        it leave the voice channel without any reason.
-        """
-
-        queue = self.queues[ctx.guild.id]
-        queue.play()
+                if response.content in map(str, range(1, len(results)+1)):  # a number
+                    await msg.delete()
+                    await ctx.invoke(self.play, query=results[int(response.content) - 1].webpage_url)
+                else:  # response is to cancel
+                    await msg.delete()
 
     @commands.command(aliases=['q'])
-    async def queue(self, ctx):
-        """Shows queue"""
+    async def queue(self, ctx, page: int = 1):
+        """Show the queue in embed form with pages"""
+        current_queue = self.queues[ctx.guild.id]
 
-        queue = self.queues[ctx.guild.id]
-        if ctx.voice_client is None:
-            await ctx.reply('**Furret is not playing anything.**')
-        else:
-            msg = await ctx.reply(embed=queue.create_embed())
-            if (max_page := math.ceil((len(queue) - 1) / 10)) > 1:
-                current_page = 1
-                await msg.add_reaction('⬅️')
-                await msg.add_reaction('➡️')
+        if not ctx.voice_client:
+            await ctx.reply('Furret is not playing anything')
+            return
+        msg = await ctx.reply(embed=current_queue.embed(page))
+        max_page = current_queue.max_page
+        if max_page > 1:
+            current_page = page
+            await msg.add_reaction('⬅️')
+            await msg.add_reaction('➡️')
 
-                def check(reaction, user):
-                    return not user.bot and reaction.emoji in ('⬅️', '➡️')
+            def check(reaction, user):
+                return not user.bot and reaction.emoji in ('⬅️', '➡️')
 
-                stop = False
-                while not stop:
-                    try:
-                        reaction, user = await self.bot.wait_for('reaction_add', timeout=10, check=check)
-                    except asyncio.TimeoutError:
-                        await msg.clear_reactions()
-                        stop = True
-                    else:
-                        await reaction.remove(user)
-                        if reaction.emoji == '⬅️' and current_page != 1:
-                            current_page -= 1
-                            await msg.edit(embed=queue.create_embed(current_page))
-                        elif reaction.emoji == '➡️' and current_page != max_page:
-                            current_page += 1
-                            await msg.edit(embed=queue.create_embed(current_page))
-
-    @commands.command()
-    async def volume(self, ctx, volume: int):
-        """Changes the song's volume"""
-
-        if ctx.voice_client is None:
-            return await ctx.reply("**Not connected to a voice channel.**")
-
-        ctx.voice_client.source.volume = volume / 100
-        await ctx.reply("**Changed volume to {}%**".format(volume))
-
-    @commands.command()
-    async def shuffle(self, ctx):
-        """Shuffles the queue"""
-
-        queue = self.queues[ctx.guild.id]
-        await ctx.reply(queue.shuffle())
-
-    @commands.command()
-    async def clear(self, ctx):
-        """Clears the queue"""
-        queue = self.queues[ctx.guild.id]
-
-        await ctx.reply(queue.clear())
-
-    @commands.command()
-    async def pause(self, ctx):
-        """Pauses the bot"""
-
-        if not ctx.voice_client.is_paused():
-            ctx.voice_client.pause()
-            await ctx.reply('**Paused.**')
-        elif ctx.voice_client.is_paused():
-            await ctx.reply('**Already paused.**')
-
-    @commands.command()
-    async def resume(self, ctx):
-        """Resumes the bot"""
-
-        if ctx.voice_client.is_paused():
-            ctx.voice_client.resume()
-            await ctx.reply('**Resumed.**')
-        elif not ctx.voice_client.is_paused():
-            await ctx.reply('**Already playing.**')
+            while True:
+                try:
+                    reaction, user = await self.bot.wait_for('reaction_add', timeout=10, check=check)
+                except asyncio.TimeoutError:
+                    await msg.clear_reactions()
+                    break
+                else:
+                    await reaction.remove(user)
+                    if reaction.emoji == '⬅️' and current_page != 1:
+                        current_page -= 1
+                    elif reaction.emoji == '➡️' and current_page != max_page:
+                        current_page += 1
+                    await msg.edit(embed=current_queue.embed(current_page))
 
     @commands.command(aliases=['s'])
     async def skip(self, ctx):
-        """Skip the current song"""
+        """Skip the current playing song"""
 
-        ctx.voice_client.stop()
-        await ctx.reply('**Skipped.**')
-
-    @commands.command()
-    async def loop(self, ctx, arg=None):
-        """Loop queue"""
-
-        queue = self.queues[ctx.guild.id]
-        if not arg:
-            await ctx.reply(f'Loop queue: {"on" if queue.loop_queue else "off"}\n'
-                            f'Loop current song: {"on" if queue.loop_song else "off"}\n'
-                            f'Specify `queue` or `song` to loop as the argument.')
-        elif arg.lower() == 'queue':
-            if queue.loop_queue:
-                queue.loop_queue = False
-                await ctx.reply('**Toggled off**')
-            else:
-                queue.loop_queue = True
-                await ctx.reply('**Toggled on**')
-        elif arg.lower() == 'song':
-            if queue.loop_song:
-                queue.loop_song = False
-                await ctx.reply('**Toggled off**')
-            else:
-                queue.loop_song = True
-                await ctx.reply('**Toggled on**')
+        song = self.queues[ctx.guild.id].skip()
+        await ctx.reply(f'Skipped `{song}`')
 
     @commands.command()
-    async def move(self, ctx, song_index: int, new_index: int):
-        """Moves song in a specific position to another position"""
+    async def pause(self, ctx):
+        """Pause the current playing song"""
 
-        queue = self.queues[ctx.guild.id]
-        await ctx.reply(queue.move_song(song_index=song_index, new_index=new_index))
+        if not ctx.voice_client.is_paused():
+            ctx.voice_client.pause()
+            await ctx.reply('Player paused')
 
     @commands.command()
-    async def remove(self, ctx, song_index: int):
-        """Removes song in a specific position"""
+    async def resume(self, ctx):
+        """Resume the current paused song"""
 
-        queue = self.queues[ctx.guild.id]
+        if ctx.voice_client.is_paused():
+            ctx.voice_client.resume()
+            await ctx.reply('Player resumed')
 
-        removed = queue.remove_song_at_index(song_index)
-        if removed is not None:
-            await ctx.reply(f'**Removed** `{removed.title}`')
-        else:
-            await ctx.reply(f'**There\'s no song in position** `{song_index}`')
+    @commands.command()
+    async def volume(self, ctx, volume: int):
+        """Change player volume, 1 - 100"""
+
+        self.queues[ctx.guild.id].volume = volume
+        await ctx.reply(f'Volume changed to `{volume}%`')
+
+    @volume.error
+    async def volume_error(self, ctx, error):
+        match error:
+            case MissingRequiredArgument():
+                await ctx.reply(f'Volume is at `{self.queue[ctx.guild.id].volume}%`')
+            case _:
+                raise error
+
+    @commands.command()
+    async def move(self, ctx, song_position: int, ending_position: int):
+        """Move song from one position to another"""
+        current_queue = self.queues[ctx.guild.id]
+
+        current_queue.move(song_position-1, ending_position-1)
+        await ctx.reply(f'Moved `{current_queue[ending_position-1]}` to position `{ending_position}`')
+
+    @commands.command()
+    async def remove(self, ctx, position: int):
+        """Remove the song on a specified position"""
+
+        removed = self.queues[ctx.guild.id].pop(position-1)
+        await ctx.reply(f'Removed `{removed.title}`')
+
+    @commands.command()
+    async def clear(self, ctx):
+        """Clear queue. Doesn't affect current playing song"""
+
+        self.queues[ctx.guild.id].clear()
+        await ctx.reply("Queue cleared")
 
     @commands.command()
     async def stop(self, ctx):
-        """Stops and disconnects the bot from voice"""
+        """Disconnect and clear queue"""
 
-        queue = self.queues[ctx.guild.id]
-
-        queue.stop()
         await ctx.voice_client.disconnect()
+        del self.queues[ctx.guild.id]
 
     @commands.command()
-    async def fuck(self, ctx, command):
-        if command == 'off':
-            await ctx.invoke(self.bot.get_command('stop'))
+    async def loop(self, ctx, mode=None):
+        if not mode:
+            await ctx.reply(f'{self.queues[ctx.guild.id].loop.value}\n'
+                            f'`loop <clear|queue|song>` to change loop mode')
+        else:
+            match mode:
+                case ('off' | 'clear'):
+                    self.queues[ctx.guild.id].loop_mode(LoopType.NO_LOOP)
+                    await ctx.reply('Not looping')
+                case ('queue' | 'q'):
+                    self.queues[ctx.guild.id].loop_mode(LoopType.LOOP_QUEUE)
+                    await ctx.reply('Looping queue')
+                case ('song' | 's'):
+                    self.queues[ctx.guild.id].loop_mode(LoopType.LOOP_SONG)
+                    await ctx.reply('Looping song')
 
+    #
+    # @commands.group()
+    # async def playlist(self, ctx):
+    #     if not ctx.invoked_subcommand:
+    #         await ctx.
+    #
+    # @playlist.command()
+    # async def save(self, ctx, *, playlist_name: str):
+    #     entries = {playlist_name: [(song.title, song.webpage_url) for song in self.queues[ctx.guild.id]]}
+    #     with open(r'.\config\music.json', 'w') as f:
+    #         data = json.load(f)
+    #         data['playlist'].update(entries)
+    #         json.dump(data, f)
+    #     await ctx.reply(f'Playlist `{playlist_name}` created.')
+    #
+    # @playlist.command()
+    # async def play(self, ctx, *, playlist_name: str):
+
+    @join.before_invoke
     @play.before_invoke
     @search.before_invoke
-    async def ensure_voice(self, ctx):
-        queue = self.queues[ctx.guild.id]
-        if ctx.author.voice:
-            if ctx.voice_client is None:
-                queue.vc = await ctx.author.voice.channel.connect()
-        else:
-            await ctx.reply("**You are not connected to a voice channel.**")
-            raise commands.CommandError("**Author not connected to a voice channel.**")
-        # elif ctx.voice_client.is_playing:
-        #     ctx.voice_client.stop()
+    async def create_queue(self, ctx):
+        if ctx.guild.id not in self.queues:
+            self.queues[ctx.guild.id] = Queue()
 
 
-def setup(client):
-    client.add_cog(Music(client))
+def setup(bot):
+    bot.add_cog(Music(bot))
