@@ -1,20 +1,25 @@
 {
-  "reply bot": true,
-  "bad users": [],
-  "trigger words": [
-    "fried",
-    "steam",
-    "cooked",
-    "cook",
-    "bbq",
-    "eat",
-    "eating",
-    "barbeque",
-    "goreng",
-    "sashimi"],
-  "choices": {
-    "good": ["Yes.", "Yes!", "Furret approve.", "Furret like it.", "Furret love it!"],
-    "bad": ["No.", "No!", "Furret disprove.", "Furret dislike it", "Furret hate it!"],
-    "very bad": ["Fuck you!"]
-  }
+    "replybot": {
+        "reply_rate": 0.01,
+        "blacklist": [838658959626862662]
+    },
+    "choices": {
+        "good": [
+            "Yes.",
+            "Yes!",
+            "Furret approve.",
+            "Furret like it.",
+            "Furret love it!"
+        ],
+        "bad": [
+            "No.",
+            "No!",
+            "Furret disprove.",
+            "Furret dislike it",
+            "Furret hate it!"
+        ]
+    },
+    "sin_counter": {
+        "619408354636464151": 4
+    }
 }
