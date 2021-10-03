@@ -1,4 +1,4 @@
-import json
+# import json
 import typing
 
 import youtube_dl
@@ -448,6 +448,13 @@ class Music(commands.Cog):
 
         await ctx.voice_client.disconnect()
         del self.queues[ctx.guild.id]
+
+    @commands.command(aliases=['dc'])
+    async def disconnect(self, ctx):
+        """Disconnect and keep the queue"""
+
+        await ctx.invoke(self.pause)
+        await ctx.voice_client.disconnect()
 
     @commands.command()
     async def loop(self, ctx, mode=None):
