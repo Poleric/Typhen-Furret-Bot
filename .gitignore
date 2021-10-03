@@ -124,10 +124,11 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Text files
-*.txt
+# Batch executable
+*.bat
 
 # Unused Cogs
 .*.py
 
-*.bat
+# Token file
+token

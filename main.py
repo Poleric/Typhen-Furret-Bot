@@ -159,7 +159,7 @@ for file in os.listdir('./cogs/'):
 
 
 # Read token
-with open('token.txt', 'r') as f:
+with open('token', 'r') as f:
     token = f.read()
 
 bot.run(token)
