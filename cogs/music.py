@@ -47,7 +47,10 @@ class Playlist:
         return self.title
 
     def __iter__(self):
-        return self.songs
+        yield from self.songs
+
+    def __len__(self):
+        return len(self.songs)
 
     def __getitem__(self, item):
         return self.songs[item]
@@ -147,7 +150,7 @@ class Queue:
     def __str__(self):
         return str(self._songs)
 
-    def loop_mode(self, mode: LoopType):
+    def change_loop(self, mode: LoopType):
         if isinstance(mode, LoopType):
             self.loop = mode
             return self.loop
@@ -203,10 +206,11 @@ class Queue:
 
         if self.voice_client is None:  # Check if theres a voice client in the first place
             raise self.NotConnectedToVoice('No VoiceClient found')
-        self._playing = self._songs.popleft()
-        self.voice_client.play(
-            PCMVolumeTransformer(FFmpegPCMAudio(self._playing.source_url, **self.ffmpeg_options), self._volume / 100),
-            after=self.play_next)
+        if not self.voice_client.is_paused():
+            self._playing = self._songs.popleft()
+            self.voice_client.play(
+                PCMVolumeTransformer(FFmpegPCMAudio(self._playing.source_url, **self.ffmpeg_options), self._volume / 100),
+                after=self.play_next)
 
     def play_next(self, error):
         if error:
@@ -285,8 +289,8 @@ class Music(commands.Cog):
 
         if not ctx.voice_client:
             await ctx.invoke(self.join)
-
-        result = await search(query, ctx.author)
+        async with ctx.typing():
+            result = await search(query, ctx.author)
         match result:
             case Song():
                 current_queue.add(result)
@@ -385,8 +389,9 @@ class Music(commands.Cog):
     @commands.command(aliases=['s'])
     async def skip(self, ctx):
         """Skip the current playing song"""
+        current_queue = self.queues[ctx.guild.id]
 
-        song = self.queues[ctx.guild.id].skip()
+        song = current_queue.skip()
         await ctx.reply(f'Skipped `{song}`')
 
     @commands.command()
@@ -408,8 +413,9 @@ class Music(commands.Cog):
     @commands.command()
     async def volume(self, ctx, volume: int):
         """Change player volume, 1 - 100"""
+        current_queue = self.queues[ctx.guild.id]
 
-        self.queues[ctx.guild.id].volume = volume
+        current_queue.volume = volume
         await ctx.reply(f'Volume changed to `{volume}%`')
 
     @volume.error
@@ -431,21 +437,25 @@ class Music(commands.Cog):
     @commands.command()
     async def remove(self, ctx, position: int):
         """Remove the song on a specified position"""
+        current_queue = self.queues[ctx.guild.id]
 
-        removed = self.queues[ctx.guild.id].pop(position-1)
+        removed = current_queue.pop(position-1)
         await ctx.reply(f'Removed `{removed.title}`')
 
     @commands.command()
     async def clear(self, ctx):
         """Clear queue. Doesn't affect current playing song"""
+        current_queue = self.queues[ctx.guild.id]
 
-        self.queues[ctx.guild.id].clear()
+        current_queue.clear()
         await ctx.reply("Queue cleared")
 
     @commands.command()
     async def stop(self, ctx):
         """Disconnect and clear queue"""
+        current_queue = self.queues[ctx.guild.id]
 
+        current_queue.clear()
         await ctx.voice_client.disconnect()
         del self.queues[ctx.guild.id]
 
@@ -458,19 +468,21 @@ class Music(commands.Cog):
 
     @commands.command()
     async def loop(self, ctx, mode=None):
+        current_queue = self.queues[ctx.guild.id]
+
         if not mode:
-            await ctx.reply(f'{self.queues[ctx.guild.id].loop.value}\n'
+            await ctx.reply(f'{current_queue.loop.value}\n'
                             f'`loop <clear|queue|song>` to change loop mode')
         else:
             match mode:
                 case ('off' | 'clear'):
-                    self.queues[ctx.guild.id].loop_mode(LoopType.NO_LOOP)
+                    current_queue.change_loop(LoopType.NO_LOOP)
                     await ctx.reply('Not looping')
                 case ('queue' | 'q'):
-                    self.queues[ctx.guild.id].loop_mode(LoopType.LOOP_QUEUE)
+                    current_queue.change_loop(LoopType.LOOP_QUEUE)
                     await ctx.reply('Looping queue')
                 case ('song' | 's'):
-                    self.queues[ctx.guild.id].loop_mode(LoopType.LOOP_SONG)
+                    current_queue.change_loop(LoopType.LOOP_SONG)
                     await ctx.reply('Looping song')
 
     #
