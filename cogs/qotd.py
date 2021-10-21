@@ -19,7 +19,7 @@ class QOTD(commands.Cog):
 
             # pin the current qotd and start a thread
             await msg.pin(reason='QOTD')
-            await msg.start_thread(name=msg.content if len(msg.content) < 100 else 'QOTD')
+            await msg.create_thread(name=msg.content if len(msg.content) < 100 else 'QOTD')
 
 
 def setup(bot):
