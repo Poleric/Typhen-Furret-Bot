@@ -58,10 +58,10 @@ class Playlist:
     @classmethod
     def from_data(cls, data, requester):
         return cls(data['title'], [Song.from_data(song_data, requester) for song_data in data['entries']],
-                   data['webpage_url'], data['uploader'], requester)
+                   data['webpage_url'], data['uploader'] if 'uploader' in data else None, requester)
 
 
-async def search(query: str, requester, *, number_of_results: int = None, loop=None) -> Song | Playlist | list[Song] | None:
+async def search(query: str, requester, *, size: int = -1) -> Song | Playlist | list[Song]:
     youtube_dl.utils.bug_reports_message = lambda: ''
     ydl_options = {
         'format': 'bestaudio/best',
@@ -70,26 +70,21 @@ async def search(query: str, requester, *, number_of_results: int = None, loop=N
     }
     ydl = youtube_dl.YoutubeDL(ydl_options)
 
-    loop = loop or asyncio.get_event_loop()
-    # direct search from url
-    if re.match(r'https?://.*youtu.*/playlist\?list=.*', query):  # yt playlist url pattern
-        data = await loop.run_in_executor(None, lambda: ydl.extract_info(query, download=False))
-        return Playlist.from_data(data, requester)
-    elif re.match(r'https?://.*youtu.*/.*', query):  # yt video url pattern
-        data = await loop.run_in_executor(None, lambda: ydl.extract_info(query, download=False))
-        return Song.from_data(data, requester)
+    loop = asyncio.get_event_loop()
+    if not re.match(r'https?://.*youtu.*/.*', query):  # youtube url pattern
+        query = f'ytsearch{abs(size)}:{query}'
+    data = await loop.run_in_executor(None, lambda: ydl.extract_info(query, download=False))
 
-    # non url query
-    else:
-        # search from query
-        results = await loop.run_in_executor(None, lambda: ydl.extract_info(f'ytsearch{number_of_results or 1}:{query}', download=False))
-        if results['entries']:
-            if not number_of_results:
-                return Song.from_data(results['entries'][0], requester)
+    match data:
+        case {'formats': _}:  # video type
+            return Song.from_data(data, requester)
+        case {'_type': 'playlist', 'extractor': 'youtube:tab'}:  # playlist type
+            return Playlist.from_data(data, requester)
+        case {'extractor': 'youtube:search', 'entries': results}:  # search results
+            if size == -1:
+                return Song.from_data(results[0], requester)
             else:
-                return [Song.from_data(data, requester) for data in results['entries']]
-        else:
-            return
+                return [Song.from_data(data, requester) for data in results]
 
 
 class LoopType(Enum):
@@ -325,7 +320,7 @@ class Music(commands.Cog):
         number_of_results = number_of_results if number_of_results <= 10 else 10
 
         async with ctx.typing():
-            results: list[Song] = await search(query, ctx.author, number_of_results=number_of_results)
+            results = await search(query, ctx.author, size=number_of_results)
 
         if results:
             # results embed
@@ -400,7 +395,7 @@ class Music(commands.Cog):
 
         if not ctx.voice_client.is_paused():
             ctx.voice_client.pause()
-            await ctx.reply('Player paused')
+        await ctx.reply('Player paused')
 
     @commands.command()
     async def resume(self, ctx):
@@ -450,7 +445,7 @@ class Music(commands.Cog):
         current_queue.clear()
         await ctx.reply("Queue cleared")
 
-    @commands.command()
+    @commands.command(aliases=['disconnect', 'dc'])
     async def stop(self, ctx):
         """Disconnect and clear queue"""
         current_queue = self.queues[ctx.guild.id]
@@ -458,13 +453,6 @@ class Music(commands.Cog):
         current_queue.clear()
         await ctx.voice_client.disconnect()
         del self.queues[ctx.guild.id]
-
-    @commands.command(aliases=['dc'])
-    async def disconnect(self, ctx):
-        """Disconnect and keep the queue"""
-
-        await ctx.invoke(self.pause)
-        await ctx.voice_client.disconnect()
 
     @commands.command()
     async def loop(self, ctx, mode=None):
@@ -484,24 +472,6 @@ class Music(commands.Cog):
                 case ('song' | 's'):
                     current_queue.change_loop(LoopType.LOOP_SONG)
                     await ctx.reply('Looping song')
-
-    #
-    # @commands.group()
-    # async def playlist(self, ctx):
-    #     if not ctx.invoked_subcommand:
-    #         await ctx.
-    #
-    # @playlist.command()
-    # async def save(self, ctx, *, playlist_name: str):
-    #     entries = {playlist_name: [(song.title, song.webpage_url) for song in self.queues[ctx.guild.id]]}
-    #     with open(r'.\config\music.json', 'w') as f:
-    #         data = json.load(f)
-    #         data['playlist'].update(entries)
-    #         json.dump(data, f)
-    #     await ctx.reply(f'Playlist `{playlist_name}` created.')
-    #
-    # @playlist.command()
-    # async def play(self, ctx, *, playlist_name: str):
 
     @join.before_invoke
     @play.before_invoke
