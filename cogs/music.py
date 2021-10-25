@@ -16,6 +16,15 @@ from discord.ext import commands
 from discord.ext.commands.errors import MissingRequiredArgument
 
 
+def seconds_to_str(seconds: float, nanoseconds=False) -> str:
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    hours, minutes, seconds = int(hours), int(minutes), int(seconds) if not nanoseconds else seconds
+    if hours:
+        return f'{hours}:{minutes}:{seconds}'
+    return f'{minutes}:{seconds}'
+
+
 @dataclass()
 class Song:
     title: str
@@ -58,7 +67,17 @@ class Playlist:
     @classmethod
     def from_data(cls, data, requester):
         return cls(data['title'], [Song.from_data(song_data, requester) for song_data in data['entries']],
-                   data['webpage_url'], data['uploader'] if 'uploader' in data else None, requester)
+                   data['webpage_url'], data.get('uploader'), requester)
+
+@dataclass()
+class SavedPlaylist:
+    name: str
+    owner_name: str
+    owner_id: int
+    songs: list[dict]
+
+    def __len__(self):
+        return len(self.songs)
 
 
 async def search(query: str, requester, *, size: int = -1) -> Song | Playlist | list[Song]:
@@ -104,7 +123,7 @@ class Queue:
     _songs: deque[Song] = deque()
     voice_client: VoiceClient = None
     # Queue options
-    _playing: Song = None
+    playing: Song = None
     _volume: int = 100  # 1 - 100
     loop: LoopType = LoopType.NO_LOOP
 
@@ -202,9 +221,9 @@ class Queue:
         if self.voice_client is None:  # Check if theres a voice client in the first place
             raise self.NotConnectedToVoice('No VoiceClient found')
         if not self.voice_client.is_paused():
-            self._playing = self._songs.popleft()
+            self.playing = self._songs.popleft()
             self.voice_client.play(
-                PCMVolumeTransformer(FFmpegPCMAudio(self._playing.source_url, **self.ffmpeg_options), self._volume / 100),
+                PCMVolumeTransformer(FFmpegPCMAudio(self.playing.source_url, **self.ffmpeg_options), self._volume / 100),
                 after=self.play_next)
 
     def play_next(self, error):
@@ -212,16 +231,16 @@ class Queue:
             print(f'{datetime.now}: {error=}\n')
         match self.loop:
             case LoopType.LOOP_QUEUE:
-                self._songs.append(self._playing)
+                self._songs.append(self.playing)
             case LoopType.LOOP_SONG:
-                self._songs.appendleft(self._playing)
+                self._songs.appendleft(self.playing)
         if self._songs:
             self.play()
 
     def skip(self):
         """Skip and return current playing song"""
         self.voice_client.stop()
-        return self._playing
+        return self.playing
 
     def embed(self, page: int = 1) -> Embed:
         # Error checking
@@ -230,9 +249,9 @@ class Queue:
         embed = Embed(title='Queue', color=0x25fa30)
         # Shows playing song, only when first "page" of the embed
         if page == 1:
-            if self._playing:  # Check if theres a playing song
+            if self.playing:  # Check if theres a playing song
                 embed.add_field(name='__Now Playing__',
-                                value=f'[{self._playing.title}]({self._playing.webpage_url}) | `{self._playing.duration}` | `Requested by {self._playing.requester}`',
+                                value=f'[{self.playing.title}]({self.playing.webpage_url}) | `{self.playing.duration}` | `Requested by {self.playing.requester}`',
                                 inline=False)
             else:  # No playing song
                 embed.add_field(name='__Now Playing__',
@@ -252,7 +271,7 @@ class Queue:
                                     inline=False)
             except IndexError:
                 break
-        embed.set_footer(text=f'Page {page}/{self.max_page} | {self.loop.value} | Duration: {self.duration}')
+        embed.set_footer(text=f'Page {page}/{self.max_page} | {self.loop.value} | Duration: {seconds_to_str(self.duration.total_seconds())}')
         return embed
 
 
@@ -413,6 +432,18 @@ class Music(commands.Cog):
         current_queue.volume = volume
         await ctx.reply(f'Volume changed to `{volume}%`')
 
+    @commands.command()
+    async def np(self, ctx):
+        current_playing = self.queues[ctx.guild.id].playing
+        player = ctx.voice_client._player
+
+        embed = Embed(title='Now Playing', description=f'[{current_playing.title}]({current_playing.webpage_url})')
+        embed.set_thumbnail(url=current_playing.thumbnail_url)
+        embed.add_field(name='\u200b',
+                        value=f'`{seconds_to_str(player.DELAY * player.loops)} / {seconds_to_str(current_playing.duration.total_seconds())}`',
+                        inline=False)
+        await ctx.reply(embed=embed)
+
     @volume.error
     async def volume_error(self, ctx, error):
         match error:
@@ -426,8 +457,9 @@ class Music(commands.Cog):
         """Move song from one position to another"""
         current_queue = self.queues[ctx.guild.id]
 
+        moved_song = current_queue[song_position-1]
         current_queue.move(song_position-1, ending_position-1)
-        await ctx.reply(f'Moved `{current_queue[ending_position-1]}` to position `{ending_position}`')
+        await ctx.reply(f'Moved `{moved_song}` to position `{ending_position}`')
 
     @commands.command()
     async def remove(self, ctx, position: int):
@@ -472,6 +504,24 @@ class Music(commands.Cog):
                 case ('song' | 's'):
                     current_queue.change_loop(LoopType.LOOP_SONG)
                     await ctx.reply('Looping song')
+
+    # @commands.group()
+    # async def playlist(self, ctx):
+    #     pass
+    #
+    # @playlist.command()
+    # async def list(self, ctx):
+    #     playlists: list[SavedPlaylist] = []
+    #     with open(r'.\config\music.json', 'r') as f:
+    #         for playlist in json.load(f)['saved_playlist']:
+    #             playlists.append(SavedPlaylist(**playlist))
+    #
+    #     embed = Embed(title='Saved Playlists')
+    #     for playlist in playlists:
+    #         msgs = (f"`{i}.` {song['name']}\n" for i, song in zip(range(2), playlist.songs))
+    #         embed.add_field(name=f'{playlist.name} | {playlist.owner_name} | `{len(playlist)}` songs',
+    #                         value=f'{"".join(msgs)}',
+    #                         inline=False)
 
     @join.before_invoke
     @play.before_invoke
