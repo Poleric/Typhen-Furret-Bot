@@ -294,7 +294,7 @@ class Music(commands.Cog):
                 await ctx.reply('No voice channel found')
                 return
 
-        if not current_queue.voice_client:
+        if not ctx.voice_client or not ctx.voice_client.is_connected():
             current_queue.voice_client = await channel.connect()
 
     @commands.command(aliases=['p'])
@@ -302,7 +302,7 @@ class Music(commands.Cog):
         """Add and play songs from url or song name"""
         current_queue = self.queues[ctx.guild.id]
 
-        if not ctx.voice_client:
+        if not ctx.voice_client or not ctx.voice_client.is_connected():
             await ctx.invoke(self.join)
         async with ctx.typing():
             result = await search(query, ctx.author)
