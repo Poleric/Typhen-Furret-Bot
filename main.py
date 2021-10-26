@@ -9,7 +9,7 @@ from discord.ext.commands import is_owner, Bot, when_mentioned_or, has_permissio
 from discord.ext.commands.errors import ExtensionNotLoaded, ExtensionFailed, ExtensionAlreadyLoaded
 
 
-with open('config/bot.json', 'r') as data:
+with open('./config/bot.json', 'r') as data:
     bot_config = json.load(data)
 
 

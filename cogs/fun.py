@@ -11,7 +11,7 @@ from cogs.admin import Silenced
 
 
 class Fun(commands.Cog):
-    CONFIG_PATH = r'.\config\fun.json'
+    CONFIG_PATH = r'./config/fun.json'
 
     def __init__(self, bot):
         self._bot = bot

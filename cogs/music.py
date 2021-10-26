@@ -69,6 +69,7 @@ class Playlist:
         return cls(data['title'], [Song.from_data(song_data, requester) for song_data in data['entries']],
                    data['webpage_url'], data.get('uploader'), requester)
 
+
 @dataclass()
 class SavedPlaylist:
     name: str
@@ -512,7 +513,7 @@ class Music(commands.Cog):
     # @playlist.command()
     # async def list(self, ctx):
     #     playlists: list[SavedPlaylist] = []
-    #     with open(r'.\config\music.json', 'r') as f:
+    #     with open(r'./config/music.json', 'r') as f:
     #         for playlist in json.load(f)['saved_playlist']:
     #             playlists.append(SavedPlaylist(**playlist))
     #
