@@ -1,7 +1,7 @@
 import os
 import traceback
 import json
-import datetime
+from datetime import datetime
 import socket
 import discord
 from discord import Intents, AllowedMentions, CustomActivity
@@ -43,7 +43,7 @@ async def on_ready():
     print(f'Bot is logged in as\n'
           f'name: {bot.user}\n'
           f'id: {bot.user.id}\n'
-          f'on {datetime.datetime.now()}')
+          f'on {datetime.now()}')
 
 
 @bot.event
@@ -52,6 +52,7 @@ async def on_command_error(_, error):
 
     if isinstance(error, CommandNotFound):
         return
+    print(f'\n[{datetime.now()}] [ERROR]')
     raise error
 
 
@@ -60,7 +61,7 @@ async def on_command_error(_, error):
 async def clear_console(_):
     """Clear console"""
 
-    os.system('cls||echo -e \\\\033c')
+    os.system('cls' if os.name == 'nt' else 'clear')
 
 
 @bot.command()
