@@ -86,7 +86,8 @@ async def search(query: str, requester, *, size: int = -1) -> Song | Playlist | 
     ydl_options = {
         'format': 'bestaudio/best',
         'quiet': True,
-        'no_warnings': True
+        'no_warnings': True,
+        'cachedir': False
     }
     ydl = youtube_dl.YoutubeDL(ydl_options)
 
@@ -229,6 +230,7 @@ class Queue:
 
     def play_next(self, error):
         if error:
+            print(type(error))
             print(f'{datetime.now}: {error=}\n')
         match self.loop:
             case LoopType.LOOP_QUEUE:
