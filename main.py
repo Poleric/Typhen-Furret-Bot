@@ -1,6 +1,7 @@
 import os
 import traceback
 import json
+import time
 from datetime import datetime
 import socket
 import discord
@@ -25,7 +26,7 @@ def is_connected():
 
 
 while not is_connected():
-    pass
+    time.sleep(1)
 
 
 activity_text = lambda x: f'Pokémon | {x}help'
