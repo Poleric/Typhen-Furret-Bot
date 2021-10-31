@@ -420,6 +420,15 @@ class Music(commands.Cog):
             await ctx.reply('Player resumed')
 
     @commands.command()
+    async def shuffle(self, ctx):
+        """Shuffle the queue"""
+
+        current_queue = self.queues[ctx.guild.id]
+
+        current_queue.shuffle()
+        await ctx.reply('Queue shuffled')
+
+    @commands.command()
     async def volume(self, ctx, volume: int):
         """Change player volume, 1 - 100"""
         current_queue = self.queues[ctx.guild.id]
