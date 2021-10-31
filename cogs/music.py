@@ -16,15 +16,6 @@ from discord.ext import commands
 from discord.ext.commands.errors import MissingRequiredArgument
 
 
-def seconds_to_str(seconds: float, nanoseconds=False) -> str:
-    hours, remainder = divmod(seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    hours, minutes, seconds = int(hours), int(minutes), int(seconds) if not nanoseconds else seconds
-    if hours:
-        return f'{hours}:{minutes}:{seconds}'
-    return f'{minutes}:{seconds}'
-
-
 @dataclass()
 class Song:
     title: str
@@ -87,7 +78,8 @@ async def search(query: str, requester, *, size: int = -1) -> Song | Playlist | 
         'format': 'bestaudio/best',
         'quiet': True,
         'no_warnings': True,
-        'cachedir': False
+        'source_address': '0.0.0.0',
+        'postprocessor_args': ['-threads', '1']
     }
     ydl = youtube_dl.YoutubeDL(ydl_options)
 
@@ -274,7 +266,7 @@ class Queue:
                                     inline=False)
             except IndexError:
                 break
-        embed.set_footer(text=f'Page {page}/{self.max_page} | {self.loop.value} | Duration: {seconds_to_str(self.duration.total_seconds())}')
+        embed.set_footer(text=f'Page {page}/{self.max_page} | {self.loop.value} | Duration: {self.duration}')
         return embed
 
 
@@ -333,8 +325,8 @@ class Music(commands.Cog):
                 return
 
         if not ctx.voice_client.is_playing():
-            await ctx.reply(f'Playing `{result}`')
             current_queue.play()
+            await ctx.reply(f'Playing `{result}`')
 
     @commands.command()
     async def search(self, ctx, number_of_results: typing.Optional[int] = 10, *, query: str):
@@ -443,7 +435,7 @@ class Music(commands.Cog):
         embed = Embed(title='Now Playing', description=f'[{current_playing.title}]({current_playing.webpage_url})')
         embed.set_thumbnail(url=current_playing.thumbnail_url)
         embed.add_field(name='\u200b',
-                        value=f'`{seconds_to_str(player.DELAY * player.loops)} / {seconds_to_str(current_playing.duration.total_seconds())}`',
+                        value=f'`{timedelta(seconds=player.DELAY * player.loops)} / {current_playing.duration}`',
                         inline=False)
         await ctx.reply(embed=embed)
 
