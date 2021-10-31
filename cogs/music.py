@@ -76,8 +76,8 @@ async def search(query: str, requester, *, size: int = -1) -> Song | Playlist | 
     youtube_dl.utils.bug_reports_message = lambda: ''
     ydl_options = {
         'format': 'bestaudio/best',
-        'quiet': True,
-        'no_warnings': True,
+        # 'quiet': True,
+        # 'no_warnings': True,
         'source_address': '0.0.0.0',
         'postprocessor_args': ['-threads', '1']
     }
