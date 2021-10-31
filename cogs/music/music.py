@@ -46,7 +46,7 @@ class Music(commands.Cog):
     async def youtube(self, ctx, *, query: str):
         """Add and play songs from Youtube. Auto search if not a url."""
         current_queue = self.queues[ctx.guild.id]
-        empty_queue = not bool(current_queue)
+        empty_queue = current_queue.playing is None
 
         await ctx.invoke(self.join)
         async with ctx.typing():
@@ -56,8 +56,8 @@ class Music(commands.Cog):
             case Song():
                 current_queue.add(result)
 
-                # song add response IF the len(queue) != 1 (means the queue already have song(s))
-                if empty_queue:
+                # song add response IF the queue is not empty before adding songs
+                if not empty_queue:
                     embed = result.embed
                     embed.add_field(name='Position in queue', value=str(len(current_queue)))
                     await ctx.reply(embed=embed)

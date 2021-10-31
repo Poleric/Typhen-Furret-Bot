@@ -127,7 +127,7 @@ class Queue:
 
         if self.voice_client is None:  # Check if theres a voice client in the first place
             raise self.NotConnectedToVoice('No VoiceClient found')
-        if not self.voice_client.is_paused():
+        if not self.voice_client.is_paused() and not self.voice_client.is_playing():
             self.playing = self._songs.popleft()
             self.voice_client.play(
                 PCMVolumeTransformer(
