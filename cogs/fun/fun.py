@@ -7,11 +7,11 @@ import random
 import typing
 from collections import defaultdict
 
-from cogs.admin import Silenced
+from cogs.admin.admin import Silenced
 
 
 class Fun(commands.Cog):
-    CONFIG_PATH = r'./config/fun.json'
+    CONFIG_PATH = r'./cogs/fun/fun.json'
 
     def __init__(self, bot):
         self._bot = bot

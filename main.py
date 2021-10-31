@@ -4,14 +4,18 @@ import json
 import time
 from datetime import datetime
 import socket
-import discord
-from discord import Intents, AllowedMentions, CustomActivity
+from discord import Intents, AllowedMentions, CustomActivity, Status, Game
 from discord.ext.commands import is_owner, Bot, when_mentioned_or, has_permissions, CommandNotFound
 from discord.ext.commands.errors import ExtensionNotLoaded, ExtensionFailed, ExtensionAlreadyLoaded
 
 
-with open('./config/bot.json', 'r') as data:
+with open('bot.json', 'r') as data:
     bot_config = json.load(data)
+
+
+def commit_config():
+    with open('bot.json', 'w') as config:
+        json.dump(bot_config, config)
 
 
 def is_connected():
@@ -28,13 +32,27 @@ def is_connected():
 while not is_connected():
     time.sleep(1)
 
-
-activity_text = lambda x: f'Pokémon | {x}help'
 bot = Bot(command_prefix=when_mentioned_or(bot_config['prefix']),
           intents=Intents.all(),
-          status=discord.Status.online,
-          activity=discord.Game(activity_text(bot_config['prefix'])),
+          status=Status.online,
+          activity=Game(f'Pokémon | {bot_config["prefix"]}help'),
           allowed_mentions=AllowedMentions(replied_user=False))
+
+
+def _load(extension):
+    bot.load_extension(f'cogs.{extension}.{extension}')
+
+
+def _unload(extension):
+    bot.unload_extension(f'cogs.{extension}.{extension}')
+
+
+def _reload(extension):
+    try:
+        _unload(extension)
+    except ExtensionNotLoaded:
+        pass
+    _load(extension)
 
 
 @bot.event
@@ -70,20 +88,11 @@ async def clear_console(_):
 async def load(ctx, extension):
     """Load local extension(s)"""
 
-    # load all
-    if extension.lower() == 'all':
-        for file in os.listdir('./cogs'):
-            try:
-                if file.endswith('.py'):
-                    bot.load_extension(f'cogs.{file[:-3]}')
-            except ExtensionAlreadyLoaded:
-                pass
-        await ctx.send('Loaded all extensions')
-
-    # load {any}
-    else:
-        bot.load_extension(f'cogs.{extension}')
-        await ctx.send('Loaded {}.py'.format(extension))
+    try:
+        _load(extension)
+        await ctx.reply(f'Loaded {extension}.py')
+    except ExtensionAlreadyLoaded:
+        await ctx.reply(f'{extension}.py is already loaded')
 
 
 @bot.command()
@@ -91,20 +100,11 @@ async def load(ctx, extension):
 async def unload(ctx, extension):
     """Unload local extension(s)"""
 
-    # unload all
-    if extension.lower() == 'all':
-        for file in os.listdir('./cogs'):
-            try:
-                if file.endswith('.py'):
-                    bot.unload_extension(f'cogs.{file[:-3]}')
-            except ExtensionNotLoaded:
-                pass
-        await ctx.send('Unloaded all extensions')
-
-    # unload [cog_name]
-    else:
-        bot.unload_extension(f'cogs.{extension}')
-        await ctx.send('Unloaded {}.py'.format(extension))
+    try:
+        _unload(extension)
+        await ctx.reply(f'Unloaded {extension}.py')
+    except ExtensionNotLoaded:
+        await ctx.reply(f'{extension}.py is not loaded')
 
 
 @bot.command()
@@ -112,26 +112,8 @@ async def unload(ctx, extension):
 async def reload(ctx, extension):
     """Reload local extension(s)"""
 
-    # reload all
-    if extension.lower() == 'all':
-        not_loaded = str()
-        for file in os.listdir('./cogs'):
-            try:
-                if file.endswith('.py'):
-                    bot.unload_extension(f'cogs.{file[:-3]}')
-                    bot.load_extension(f'cogs.{file[:-3]}')
-            except ExtensionNotLoaded:
-                not_loaded += file
-        if len(not_loaded) > 0:
-            await ctx.send('Reloaded all except {}'.format(not_loaded))
-        else:
-            await ctx.send('Reloaded all extensions')
-
-    # reload [cog_name]
-    else:
-        bot.unload_extension(f'cogs.{extension}')
-        bot.load_extension(f'cogs.{extension}')
-        await ctx.send('Reloaded {}.py'.format(extension))
+    _reload(extension)
+    await ctx.reply(f'Reloaded {extension}.py')
         
 
 @bot.command()
@@ -146,16 +128,15 @@ async def ping(ctx):
 async def prefix(_, prefix):
     bot.command_prefix = prefix
     bot_config['prefix'] = prefix
-    with open('bot.json', 'w') as f:
-        f.write(bot_config)
-    await bot.change_presence(activity=CustomActivity(name=activity_text(prefix)))
+    commit_config()
+    await bot.change_presence(activity=CustomActivity(name=f'Pokémon | {prefix}help'))
 
 
 # Initialise all local cogs on start
-for file in os.listdir('./cogs/'):
+for folder in os.listdir('./cogs'):
     try:
-        if file.endswith('.py') and not file.startswith('.'):
-            bot.load_extension('cogs.{}'.format(file[:-3]))
+        if os.path.isdir(f'./cogs/{folder}'):
+            _load(folder)
     except ExtensionFailed:
         traceback.print_exc()
 

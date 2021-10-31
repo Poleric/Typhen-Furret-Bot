@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from cogs.mathbot import rpn_parser, rpn_eval, gaussian_elimination, NoSolution
+from cogs.mathbot.mathbot import rpn_parser, rpn_eval, gaussian_elimination, NoSolution
 
 
 class MyTestCase(unittest.TestCase):
