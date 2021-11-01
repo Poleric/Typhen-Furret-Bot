@@ -1,4 +1,4 @@
-from cogs.music.base_source import Song, timestamp
+from cogs.music.base_source import BaseSong, timestamp
 
 from enum import Enum, auto
 from collections import deque
@@ -30,7 +30,7 @@ class Queue:
     def __init__(self):
         self.voice_client = None
 
-        self._songs: deque[Song] = deque()
+        self._songs: deque[BaseSong] = deque()
         self.playing = None
 
         # Player settings
@@ -72,20 +72,20 @@ class Queue:
     def __iter__(self):
         yield from self._songs
 
-    def __getitem__(self, key: int) -> Song:
+    def __getitem__(self, key: int) -> BaseSong:
         return self._songs[key-1]
 
-    def add(self, song: Song) -> None:
+    def add(self, song: BaseSong) -> None:
         """Append Song into the queue"""
 
         self._songs.append(song)
 
-    def add_top(self, song: Song) -> None:
+    def add_top(self, song: BaseSong) -> None:
         """Append left Song into the queue"""
 
         self._songs.appendleft(song)
 
-    def pop(self, index: int) -> Song:
+    def pop(self, index: int) -> BaseSong:
         """
         Pop a song from the specific index in the queue
         Return Song
@@ -104,7 +104,7 @@ class Queue:
         Return moved Song
         """
 
-        if starting_index > len(self._songs) - 1:
+        if starting_index > len(self._songs):
             raise IndexError('The song does not exist lmao')
         self._songs.rotate(1-starting_index)
         popped = self._songs.popleft()
