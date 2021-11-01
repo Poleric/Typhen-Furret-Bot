@@ -9,7 +9,8 @@ import re
 
 from discord import Embed
 
-class Youtube:
+
+class YouTube:
     @dataclass(slots=True)
     class YoutubeSong(Song):
         uploader: str
@@ -81,7 +82,7 @@ class Youtube:
             'quiet': True,
 
             'format': 'bestaudio/best',
-            'socket_timeout': 5,
+            'socket_timeout': 10,
             'source_address': '0.0.0.0',
             'postprocessor_args': ['-threads', '1']
         }
@@ -103,7 +104,7 @@ class Youtube:
             'quiet': True,
 
             'extract_flat': True,
-            'socket_timeout': 5,
+            'socket_timeout': 10,
             'source_address': '0.0.0.0',
             'postprocessor_args': ['-threads', '1']
         }
@@ -127,7 +128,7 @@ class Youtube:
             'quiet': True,
 
             'extract_flat': True,
-            'socket_timeout': 5,
+            'socket_timeout': 10,
             'source_address': '0.0.0.0',
             'postprocessor_args': ['-threads', '1']
         }
