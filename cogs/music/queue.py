@@ -129,13 +129,13 @@ class Queue:
             raise self.NotConnectedToVoice('No VoiceClient found')
         if not self.voice_client.is_paused() and not self.voice_client.is_playing():
             self.playing = self._songs.popleft()
-            self.voice_client.play(
-                PCMVolumeTransformer(
-                    FFmpegPCMAudio(
-                        source=self.playing.source_url,
-                        **self.ffmpeg_options),
-                    self._volume / 100),
-                after=self.play_next)
+            next_source = FFmpegPCMAudio(source=self.playing.source_url, **Queue.ffmpeg_options)
+            if not next_source.read():
+                print('refreshing source')
+                self.playing.refresh_source()
+                next_source = FFmpegPCMAudio(source=self.playing.source_url, **Queue.ffmpeg_options)
+            self.voice_client.play(PCMVolumeTransformer(original=next_source, volume=self._volume / 100),
+                                   after=self.play_next)
 
     def play_next(self, error):
         if error:

@@ -13,6 +13,10 @@ class Song:
     def __str__(self):
         return self.title
 
+    def refresh_source(self):
+        """Refreshes the source url. Usually called in cases of Error 403 Access Forbidden"""
+        pass
+
 
 @dataclass(slots=True)
 class Playlist:  # urls container
