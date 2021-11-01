@@ -1,5 +1,6 @@
-from cogs.music.base_source import Song, Playlist, timestamp
+from cogs.music.base_source import BaseExtractor, BaseSong, BasePlaylist, timestamp
 from cogs.music.youtube import YouTube
+from cogs.music.soundcloud import SoundCloud
 from cogs.music.queue import LoopType, Queue
 
 import asyncio
@@ -38,26 +39,22 @@ class Music(commands.Cog):
             current_queue.voice_client = await channel.connect()
 
     @commands.command(aliases=['p'])
-    async def play(self, ctx, *, query: str):
-        if YouTube.YT_REGEX.match(query):  # query matches youtube urls
-            await ctx.invoke(self.youtube, query=query)
-            return
-
-        # resort to default website search
-        await ctx.invoke(self.youtube, query=query)
-
-    @commands.command(aliases=['yt'])
-    async def youtube(self, ctx, *, query: str):
-        """Add and play songs from Youtube. Auto search if not a url."""
+    async def play(self, ctx, *, query: str, extractor: BaseExtractor = None):
         current_queue = self.queues[ctx.guild.id]
         empty_queue = current_queue.playing is None
+        if not extractor:
+            if YouTube.YT_REGEX.match(query):
+                extractor = YouTube()
+            elif SoundCloud.SC_REGEX.match(query):
+                extractor = SoundCloud()
+            else:
+                extractor = YouTube()  # default TODO: add default_extractor variable and config
 
         await ctx.invoke(self.join)
         async with ctx.typing():
-            yt = YouTube()
-            result = await yt.process_query(query, requester=ctx.author)
+            result = await extractor.process_query(query, requester=ctx.author)
         match result:
-            case Song():
+            case BaseSong():
                 current_queue.add(result)
 
                 # song add response IF the queue is not empty before adding songs
@@ -65,15 +62,16 @@ class Music(commands.Cog):
                     embed = result.embed
                     embed.add_field(name='Position in queue', value=str(len(current_queue)))
                     await ctx.reply(embed=embed)
-            case Playlist():
+            case BasePlaylist():
                 # add songs concurrently
-                tasks = [asyncio.create_task(yt.get_video(url, ctx.author)) for url in result.songs_url]
+                tasks = [asyncio.create_task(extractor.process_query(url, ctx.author)) for url in result.songs_url]
 
                 # function for adding songs from the tasks
                 async def add_songs():
                     for task in tasks:
                         song = await task
                         current_queue.add(song)
+
                 asyncio.create_task(add_songs())
 
                 # playlist add response
@@ -86,6 +84,14 @@ class Music(commands.Cog):
         if empty_queue:
             current_queue.play()
             await ctx.reply(f'Playing `{result}`')
+
+    @commands.command(aliases=['yt'])
+    async def youtube(self, ctx, *, query: str):
+        await ctx.invoke(self.play, query=query, extractor=YouTube())
+
+    @commands.command(aliases=['sc'])
+    async def soundcloud(self, ctx, *, query: str):
+        await ctx.invoke(self.play, query=query, extractor=SoundCloud())
 
     @commands.command()
     async def search(self, ctx, number_of_results: Optional[int] = 10, *, query: str):
@@ -292,7 +298,6 @@ class Music(commands.Cog):
 
     @join.before_invoke
     @play.before_invoke
-    @youtube.before_invoke
     @search.before_invoke
     async def create_queue(self, ctx):
         if ctx.guild.id not in self.queues:
