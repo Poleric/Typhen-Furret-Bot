@@ -131,7 +131,6 @@ class Queue:
             self.playing = self._songs.popleft()
             next_source = FFmpegPCMAudio(source=self.playing.source_url, **Queue.ffmpeg_options)
             if not next_source.read():
-                print('refreshing source')
                 self.playing.refresh_source()
                 next_source = FFmpegPCMAudio(source=self.playing.source_url, **Queue.ffmpeg_options)
             self.voice_client.play(PCMVolumeTransformer(original=next_source, volume=self._volume / 100),
