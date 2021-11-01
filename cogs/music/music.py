@@ -1,4 +1,4 @@
-from cogs.music.base_source import Song, Playlist
+from cogs.music.base_source import Song, Playlist, timestamp
 from cogs.music.youtube import YouTube
 from cogs.music.queue import LoopType, Queue
 
@@ -103,7 +103,7 @@ class Music(commands.Cog):
             embed = Embed(color=0x818555)
             for i, song in enumerate(results, start=1):
                 embed.add_field(name='\u200b',
-                                value=f'`{i}.` [{song.title}]({song.webpage_url}) | `{song.duration}`',
+                                value=f'`{i}.` [{song.title}]({song.webpage_url}) | `{timestamp(song.duration)}`',
                                 inline=False)
             embed.add_field(name='\u200b', value='**Reply `cancel` to cancel search.**', inline=False)
 
@@ -207,7 +207,7 @@ class Music(commands.Cog):
         embed = Embed(title='Now Playing', description=f'[{current_playing.title}]({current_playing.webpage_url})')
         embed.set_thumbnail(url=current_playing.thumbnail_url)
         embed.add_field(name='\u200b',
-                        value=f'`{timedelta(seconds=player.DELAY * player.loops)} / {current_playing.duration}`',
+                        value=f'`{timestamp(timedelta(seconds=player.DELAY * player.loops))} / {timestamp(current_playing.duration)}`',
                         inline=False)
         await ctx.reply(embed=embed)
 

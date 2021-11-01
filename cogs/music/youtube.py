@@ -1,4 +1,4 @@
-from cogs.music.base_source import Song, Playlist, SearchResult
+from cogs.music.base_source import Song, Playlist, SearchResult, timestamp
 
 from typing import AsyncIterable
 from dataclasses import dataclass
@@ -44,7 +44,7 @@ class YouTube:
             embed = Embed(title='Song added', description=f'[{self.title}]({self.webpage_url})', color=0x33c9a4)
             embed.set_thumbnail(url=self.thumbnail_url)
             embed.add_field(name='Channel', value=self.uploader)
-            embed.add_field(name='Duration', value=str(self.duration))
+            embed.add_field(name='Duration', value=timestamp(self.duration))
             return embed
 
     @dataclass(slots=True)
