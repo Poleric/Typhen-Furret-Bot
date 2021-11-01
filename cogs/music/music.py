@@ -36,7 +36,7 @@ class Music(commands.Cog):
             current_queue.voice_client = await channel.connect()
         # is connected, check if the member's channel is different from the current channel
         elif channel != ctx.voice_client.channel:
-            current_queue.voice_client = await channel.connect()
+            await ctx.voice_client.move_to(channel)
 
     @commands.command(aliases=['p'])
     async def play(self, ctx, *, query: str, extractor: BaseExtractor = None):
