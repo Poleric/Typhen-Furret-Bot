@@ -1,43 +1,26 @@
-from cogs.music.base_source import Song, Playlist, SearchResult, timestamp
+from cogs.music.base_source import BaseExtractor, BaseSong, BasePlaylist, BaseResult, timestamp
 
-from typing import AsyncIterable
+from youtube_dl import YoutubeDL
 from dataclasses import dataclass
 from datetime import timedelta
-from youtube_dl import YoutubeDL
+from typing import AsyncIterable
 import asyncio
 import re
 
 from discord import Embed
 
 
-class YouTube:
+class YouTube(BaseExtractor):
     @dataclass(slots=True)
-    class YoutubeSong(Song):
-        uploader: str
-        thumbnail_url: str
-
-        def __init__(self, requester, **kwargs):
+    class YouTubeBaseSong(BaseSong):
+        def __init__(self, **kwargs):
             self.title = kwargs.get('title')
             self.webpage_url = kwargs.get('webpage_url')
             self.source_url = kwargs.get('url')
             self.uploader = kwargs.get('uploader')
-            self.thumbnail_url = kwargs.get('thumbnails')[0]['url']
+            self.thumbnail_url = kwargs.get('thumbnails')[-1]['url']
             self.duration = timedelta(seconds=kwargs.get('duration'))
-            self.requester = requester
-
-        def refresh_source(self):
-            ydl_options = {
-                'quiet': True,
-
-                'format': 'bestaudio/best',
-                'forceurl': True,
-                'socket_timeout': 5,
-                'source_address': '0.0.0.0',
-                'postprocessor_args': ['-threads', '1']
-            }
-
-            with YoutubeDL(ydl_options) as ydl:
-                self.source_url = ydl.extract_info(self.webpage_url, download=False)['url']
+            self.requester = kwargs.get('requester', '')
 
         @property
         def embed(self) -> Embed:
@@ -48,7 +31,7 @@ class YouTube:
             return embed
 
     @dataclass(slots=True)
-    class YoutubePlaylist(Playlist):
+    class YouTubeBasePlaylist(BasePlaylist):
         uploader: str
 
         def __init__(self, **kwargs):
@@ -60,11 +43,13 @@ class YouTube:
         @property
         def embed(self) -> Embed:
             embed = Embed(title='Playlist Added', description=f'[{self.title}]({self.webpage_url})', color=0x33c9a4)
+            if self.uploader:
+                embed.add_field(name='Channel', value=self.uploader)
             embed.add_field(name='Enqueued', value=f'{len(self.songs_url)} songs')
             return embed
 
     @dataclass(slots=True)
-    class YoutubeSearchResult(SearchResult):
+    class YouTubeResult(BaseResult):
         uploader: str
 
         def __init__(self, **kwargs):
@@ -77,7 +62,7 @@ class YouTube:
     VIDEO_REGEX = re.compile(r'https?://www.youtube.com/watch\?v=[^&\s]+')  # youtube VIDEO url, usually copied from address bar
     PLAYLIST_REGEX = re.compile(r'https?://(?:www\.)?youtube.com/.+list=[^&]+')  # youtube PLAYLIST url
 
-    async def get_video(self, query_or_url: str, requester) -> YoutubeSong:
+    async def _get_song(self, query_or_url: str) -> YouTubeBaseSong:
         ydl_options = {
             'quiet': True,
 
@@ -91,12 +76,12 @@ class YouTube:
             loop = asyncio.get_event_loop()
             if not self.YT_REGEX.match(query_or_url):  # need to search yt
                 data = await loop.run_in_executor(None, lambda: ydl.extract_info(f'ytsearch:{query_or_url}', download=False))
-                return self.YoutubeSong(**data['entries'][0], requester=requester)
+                data = data['entries'][0]
             else:
                 data = await loop.run_in_executor(None, lambda: ydl.extract_info(query_or_url, download=False))
-                return self.YoutubeSong(**data, requester=requester)
+            return self.YouTubeBaseSong(**data)
 
-    async def get_playlist(self, url) -> YoutubePlaylist:
+    async def _get_playlist(self, url) -> YouTubeBasePlaylist:
         if not self.PLAYLIST_REGEX.match(url):
             raise ValueError(f'{url} is not a playlist url')
 
@@ -112,18 +97,9 @@ class YouTube:
         with YoutubeDL(ydl_options) as ydl:
             loop = asyncio.get_event_loop()
             data = await loop.run_in_executor(None, lambda: ydl.extract_info(f'{url}', download=False))
-        return self.YoutubePlaylist(**data)
+        return self.YouTubeBasePlaylist(**data)
 
-    async def process_query(self, query: str | YoutubeSearchResult, requester) -> YoutubeSong | YoutubePlaylist:
-        if isinstance(query, self.YoutubeSearchResult):
-            query = query.webpage_url
-
-        if self.PLAYLIST_REGEX.match(query):
-            return await self.get_playlist(query)
-        else:
-            return await self.get_video(query, requester)
-
-    async def search(self, query: str, results=10) -> AsyncIterable[YoutubeSearchResult]:
+    async def search(self, query: str, results=10) -> AsyncIterable[YouTubeResult]:
         ydl_options = {
             'quiet': True,
 
@@ -138,4 +114,12 @@ class YouTube:
             data = await loop.run_in_executor(None, lambda: ydl.extract_info(f'ytsearch{results}:{query}', download=False))
 
         for video in data['entries']:
-            yield self.YoutubeSearchResult(**video)
+            yield self.YouTubeResult(**video)
+
+    async def process_query(self, query: str, requester) -> YouTubeBaseSong | YouTubeBasePlaylist:
+        if self.PLAYLIST_REGEX.match(query):
+            return await self._get_playlist(query)
+        else:
+            song = await self._get_song(query)
+            song.requester = requester
+            return song
