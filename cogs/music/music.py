@@ -1,5 +1,5 @@
 from cogs.music.base_source import Song, Playlist
-from cogs.music.youtube import Youtube
+from cogs.music.youtube import YouTube
 from cogs.music.queue import LoopType, Queue
 
 import asyncio
@@ -33,13 +33,17 @@ class Music(commands.Cog):
         # if voice_client == None (first time init) OR voice_client not connected (kicked out or disconnected)
         if not ctx.voice_client or not ctx.voice_client.is_connected():
             current_queue.voice_client = await channel.connect()
+        # is connected, check if the member's channel is different from the current channel
+        elif channel != ctx.voice_client.channel:
+            current_queue.voice_client = await channel.connect()
 
     @commands.command(aliases=['p'])
     async def play(self, ctx, *, query: str):
-        if Youtube.YT_REGEX.match(query):
+        if YouTube.YT_REGEX.match(query):  # query matches youtube urls
             await ctx.invoke(self.youtube, query=query)
             return
 
+        # resort to default website search
         await ctx.invoke(self.youtube, query=query)
 
     @commands.command(aliases=['yt'])
@@ -50,7 +54,7 @@ class Music(commands.Cog):
 
         await ctx.invoke(self.join)
         async with ctx.typing():
-            yt = Youtube()
+            yt = YouTube()
             result = await yt.process_query(query, requester=ctx.author)
         match result:
             case Song():
@@ -77,6 +81,8 @@ class Music(commands.Cog):
                 embed.set_thumbnail(url=(await tasks[0]).thumbnail_url)  # take first song thumbnail
                 await ctx.reply(embed=embed)
 
+                result = await tasks[0]
+
         if empty_queue:
             current_queue.play()
             await ctx.reply(f'Playing `{result}`')
@@ -87,7 +93,7 @@ class Music(commands.Cog):
         number_of_results = number_of_results if number_of_results <= 10 else 10
 
         async with ctx.typing():
-            yt = Youtube()
+            yt = YouTube()
             results = []
             async for song in yt.search(query, results=number_of_results):
                 results.append(song)
@@ -218,8 +224,8 @@ class Music(commands.Cog):
         """Move song from one position to another"""
         current_queue = self.queues[ctx.guild.id]
 
-        moved_song = current_queue[song_position-1]
-        current_queue.move(song_position-1, ending_position-1)
+        moved_song = current_queue[song_position]
+        current_queue.move(song_position, ending_position)
         await ctx.reply(f'Moved `{moved_song}` to position `{ending_position}`')
 
     @commands.command()
@@ -257,13 +263,13 @@ class Music(commands.Cog):
         else:
             match mode:
                 case ('off' | 'clear'):
-                    current_queue.set_loop(LoopType.NO_LOOP)
+                    current_queue.loop = LoopType.NO_LOOP
                     await ctx.reply('Not looping')
                 case ('queue' | 'q'):
-                    current_queue.set_loop(LoopType.LOOP_QUEUE)
+                    current_queue.loop = LoopType.LOOP_QUEUE
                     await ctx.reply('Looping queue')
                 case ('song' | 's'):
-                    current_queue.set_loop(LoopType.LOOP_SONG)
+                    current_queue.loop = LoopType.LOOP_SONG
                     await ctx.reply('Looping song')
 
     # @commands.group()

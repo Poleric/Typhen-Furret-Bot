@@ -73,7 +73,7 @@ class Queue:
         yield from self._songs
 
     def __getitem__(self, key: int) -> Song:
-        return self._songs[key]
+        return self._songs[key-1]
 
     def add(self, song: Song) -> None:
         """Append Song into the queue"""
