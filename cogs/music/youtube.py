@@ -62,6 +62,9 @@ class YouTube(BaseExtractor):
     VIDEO_REGEX = re.compile(r'https?://www.youtube.com/watch\?v=[^&\s]+')  # youtube VIDEO url, usually copied from address bar
     PLAYLIST_REGEX = re.compile(r'https?://(?:www\.)?youtube.com/.+list=[^&]+')  # youtube PLAYLIST url
 
+    def __str__(self):
+        return 'YouTube'
+
     async def _get_song(self, query_or_url: str) -> YouTubeBaseSong:
         ydl_options = {
             'quiet': True,

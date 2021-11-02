@@ -46,6 +46,9 @@ class SoundCloud(BaseExtractor):
     SC_REGEX = re.compile(r'(?:https?://)?(?:www|api.+\.)?(?:soundcloud\.com|snd\.sc).+')
     PLAYLIST_REGEX = re.compile(r'(?:https?://)?soundcloud\.com/[a-z0-9-_]+/sets/.+')
 
+    def __str__(self):
+        return 'SoundCloud'
+
     async def _get_song(self, query_or_url) -> SoundCloudBaseSong:
         ydl_options = {
             'quiet': True,
