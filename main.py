@@ -40,11 +40,11 @@ bot = Bot(command_prefix=when_mentioned_or(bot_config['prefix']),
 
 
 def _load(extension):
-    bot.load_extension(f'cogs.{extension}.{extension}')
+    bot.load_extension(f'cogs.{extension}')
 
 
 def _unload(extension):
-    bot.unload_extension(f'cogs.{extension}.{extension}')
+    bot.unload_extension(f'cogs.{extension}')
 
 
 def _reload(extension):

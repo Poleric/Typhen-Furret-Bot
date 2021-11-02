@@ -3,20 +3,47 @@ from cogs.music.youtube import YouTube
 from cogs.music.soundcloud import SoundCloud
 from cogs.music.queue import LoopType, Queue
 
+import json
 import asyncio
 from typing import Optional
 from datetime import timedelta
 
 from discord import VoiceChannel, Embed
 from discord.ext import commands
-from discord.ext.commands import MissingRequiredArgument
 
 
 class Music(commands.Cog):
+    CONFIG_PATH = r'./cogs/music/music.json'
 
     def __init__(self, bot):
         self.bot = bot
         self.queues: dict[int, Queue] = {}
+        self.default_extractor = self.config['default_extractor']
+
+    def get_default_extractor(self):
+        return self._extractor
+
+    def set_default_extractor(self, extractor_name: str):
+        match extractor_name.casefold():
+            case 'yt' | 'youtube':
+                self._extractor = YouTube
+            case 'sc' | 'soundcloud':
+                self._extractor = SoundCloud
+
+    default_extractor = property(get_default_extractor, set_default_extractor)
+
+    def read_config(self) -> dict:
+        with open(self.CONFIG_PATH, 'r') as f:
+            config = json.load(f)
+        return config
+
+    def commit_config(self, settings: dict):
+        config = self.read_config()
+        config.update(settings)
+        with open(self.CONFIG_PATH, 'w') as f:
+            json.dump(config, f, indent=4)
+
+    config = property(read_config, commit_config)
 
     @commands.command(aliases=['summon'])
     async def join(self, ctx, channel: VoiceChannel = None):
@@ -48,7 +75,7 @@ class Music(commands.Cog):
             elif SoundCloud.SC_REGEX.match(query):
                 extractor = SoundCloud()
             else:
-                extractor = YouTube()  # default TODO: add default_extractor variable and config
+                extractor = self.default_extractor()  # default
 
         await ctx.invoke(self.join)
         async with ctx.typing():
@@ -94,7 +121,7 @@ class Music(commands.Cog):
         await ctx.invoke(self.play, query=query, extractor=SoundCloud())
 
     @commands.command()
-    async def search(self, ctx, number_of_results: Optional[int] = 10, *, query: str):
+    async def search(self, ctx, number_of_results: Optional[int] = 10, *, query: str):  # TODO: support searching for other extractors
         """Shows results from YouTube to choose from, max 10 results"""
         number_of_results = number_of_results if number_of_results <= 10 else 10
 
@@ -198,10 +225,13 @@ class Music(commands.Cog):
         await ctx.reply('Queue shuffled')
 
     @commands.command()
-    async def volume(self, ctx, volume: int):
+    async def volume(self, ctx, volume: int = None):
         """Change player volume, 1 - 100"""
         current_queue = self.queues[ctx.guild.id]
 
+        if volume is None:
+            await ctx.reply(f'Volume is at `{current_queue.volume}%`')
+            return
         current_queue.volume = volume
         await ctx.reply(f'Volume changed to `{volume}%`')
 
@@ -216,14 +246,6 @@ class Music(commands.Cog):
                         value=f'`{timestamp(timedelta(seconds=player.DELAY * player.loops))} / {timestamp(current_playing.duration)}`',
                         inline=False)
         await ctx.reply(embed=embed)
-
-    @volume.error
-    async def volume_error(self, ctx, error):
-        match error:
-            case MissingRequiredArgument():
-                await ctx.reply(f'Volume is at `{self.queue[ctx.guild.id].volume}%`')
-            case _:
-                raise error
 
     @commands.command()
     async def move(self, ctx, song_position: int, ending_position: int):
@@ -264,7 +286,14 @@ class Music(commands.Cog):
         current_queue = self.queues[ctx.guild.id]
 
         if not mode:
-            await ctx.reply(f'{current_queue.loop.value}\n'
+            match self.loop:
+                case LoopType.LOOP_QUEUE:
+                    loop = 'Looping queue'
+                case LoopType.LOOP_SONG:
+                    loop = 'Looping song'
+                case _:
+                    loop = 'No loop'
+            await ctx.reply(f'{loop}\n'
                             f'`loop <clear|queue|song>` to change loop mode')
         else:
             match mode:
@@ -277,6 +306,25 @@ class Music(commands.Cog):
                 case ('song' | 's'):
                     current_queue.loop = LoopType.LOOP_SONG
                     await ctx.reply('Looping song')
+
+    @commands.command()
+    async def default(self, ctx, website: str = None):
+        """Show or change default website to search when not specified
+
+        Current supported website list
+        - YouTube
+        - SoundCloud
+        """
+
+        if not website:
+            await ctx.reply(f'Default website is `{self.default_extractor()}`')
+            return
+
+        self.default_extractor = website
+        self.config = {
+            'default_extractor': str(self.default_extractor())
+        }
+        await ctx.reply(f'Default website changed to `{self.default_extractor()}`')
 
     # @commands.group()
     # async def playlist(self, ctx):

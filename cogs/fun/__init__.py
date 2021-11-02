@@ -6,8 +6,7 @@ import json
 import random
 import typing
 from collections import defaultdict
-
-from cogs.admin.admin import Silenced
+from cogs.admin import Silenced
 
 
 class Fun(commands.Cog):

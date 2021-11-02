@@ -1,11 +1,10 @@
 # Modules
-import json
 import asyncio
 from typing import Optional, Union
 
 # Classes
 from datetime import datetime, timedelta
-from discord import Member, VoiceChannel, Role, TextChannel, Emoji
+from discord import Member, VoiceChannel, Role, TextChannel
 from discord.ext import commands, tasks
 from discord.ext.commands import Context, MissingPermissions
 
