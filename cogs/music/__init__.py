@@ -47,7 +47,7 @@ class Music(commands.Cog):
 
     @commands.command(aliases=['summon'])
     async def join(self, ctx, channel: VoiceChannel = None):
-        """Joins a voice channel"""
+        """Join a voice channel. Default to your current voice channel if not specified"""
         current_queue = self.queues[ctx.guild.id]
 
         # if channel is not specified
@@ -67,6 +67,7 @@ class Music(commands.Cog):
 
     @commands.command(aliases=['p'])
     async def play(self, ctx, *, query: str, extractor: BaseExtractor = None):
+        """Add the specific song from url or query"""
         current_queue = self.queues[ctx.guild.id]
         empty_queue = current_queue.playing is None
         if not extractor:
@@ -114,10 +115,12 @@ class Music(commands.Cog):
 
     @commands.command(aliases=['yt'])
     async def youtube(self, ctx, *, query: str):
+        """Use Youtube to search and play"""
         await ctx.invoke(self.play, query=query, extractor=YouTube())
 
     @commands.command(aliases=['sc'])
     async def soundcloud(self, ctx, *, query: str):
+        """Use SoundCloud to search and play"""
         await ctx.invoke(self.play, query=query, extractor=SoundCloud())
 
     @commands.command()
@@ -237,6 +240,7 @@ class Music(commands.Cog):
 
     @commands.command()
     async def np(self, ctx):
+        """Show the playing song information and progress"""
         current_playing = self.queues[ctx.guild.id].playing
         player = ctx.voice_client._player
 
@@ -283,6 +287,7 @@ class Music(commands.Cog):
 
     @commands.command()
     async def loop(self, ctx, mode=None):
+        """Show or change between loop modes"""
         current_queue = self.queues[ctx.guild.id]
 
         if not mode:
@@ -309,7 +314,7 @@ class Music(commands.Cog):
 
     @commands.command()
     async def default(self, ctx, website: str = None):
-        """Show or change default website to search when not specified
+        """Show or set default website to search when not specified
 
         Current supported website list
         - YouTube
@@ -320,10 +325,12 @@ class Music(commands.Cog):
             await ctx.reply(f'Default website is `{self.default_extractor()}`')
             return
 
+        # setting variable and config
         self.default_extractor = website
         self.config = {
             'default_extractor': str(self.default_extractor())
         }
+
         await ctx.reply(f'Default website changed to `{self.default_extractor()}`')
 
     # @commands.group()
