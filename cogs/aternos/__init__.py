@@ -7,7 +7,7 @@ from discord.ext import commands
 class Minecraft(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.aternos = Aternos('15kpzep3DVMpFTLBfkqEWwtbCuuj3FkBYytLRN53k5GvzQZidAMXh9gGGU0B7G6Coepq4wM3HGzBIwUJoXwPLNeeLqKiLNLfECs7')
+        self.aternos = Aternos('vJNZi3yIpvR0ug0DeUUR828XoJ6cIH36Yrv4vUNevjamO1Tje31577A1rRaH3eHWGwBPa0Yxm6jKjSFVT8o2UQ8r3Go89JrzVUpa')
 
     @property
     def servers(self) -> list[Server]:
