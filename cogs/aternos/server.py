@@ -34,7 +34,9 @@ class Aternos:
         })
 
     def __getitem__(self, item):
-        return self.servers[item]
+        if item == 0:
+            return self.servers
+        return self.servers[item - 1]
 
     _last_read = 0
     _html = None
