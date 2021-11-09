@@ -7,29 +7,26 @@ from discord.ext import commands
 class Minecraft(commands.Cog):
     def __init__(self, bot, session_id):
         self.bot = bot
-        self.aternos = Aternos(session_id)
+        self._aternos = Aternos(session_id)
 
-    @property
-    def servers(self) -> list[Server]:
-        return self.aternos.servers
+    @commands.group(aliases=['minecraft', 'mc'])
+    async def aternos(self, ctx):
 
-    @commands.group(aliases=['mc'])
-    async def minecraft(self, ctx):
         if not ctx.invoked_subcommand:
-            await ctx.reply(embed=self.aternos.embed)
+            await ctx.reply(embed=self._aternos.embed)
 
-    @minecraft.group(aliases=['info'])
+    @aternos.group(aliases=['info'])
     async def status(self, ctx, server: int = None):
         if not server:
-            await ctx.reply(embed=self.aternos.embed)
+            await ctx.reply(embed=self._aternos.embed)
             return
 
         try:
-            await ctx.reply(embed=self.aternos[server].embed)
+            await ctx.reply(embed=self._aternos[server].embed)
         except IndexError:
             await ctx.reply('Server does not exist')
 
-    @minecraft.group(aliases=['open', 'on'])
+    @aternos.group(aliases=['open', 'on'])
     async def start(self, ctx, server: int = None):
         if not server:
             await ctx.reply('Specify a server number to start')
@@ -39,7 +36,7 @@ class Minecraft(commands.Cog):
             async def remind():
                 await ctx.reply('Server\'s online')
 
-            success = self.aternos[server].start(remind)
+            success = self._aternos[server].start(remind)
             if success:
                 await ctx.reply('Server\'s starting')
         except IndexError:
@@ -47,14 +44,14 @@ class Minecraft(commands.Cog):
         except ServerNotOffline:
             await ctx.reply('Server is not offline')
 
-    @minecraft.group(aliases=['close', 'off'])
+    @aternos.group(aliases=['close', 'off'])
     async def stop(self, ctx, server: int = None):
         if not server:
             await ctx.reply('Specify a server number to stop')
             return
 
         try:
-            success = self.aternos[server].stop()
+            success = self._aternos[server].stop()
             if success:
                 await ctx.reply('Server\'s stopping')
         except IndexError:
@@ -62,7 +59,7 @@ class Minecraft(commands.Cog):
         except ServerNotOnline:
             await ctx.reply('Server is not online')
 
-    @minecraft.group(aliases=['reset'])
+    @aternos.group(aliases=['reset'])
     async def restart(self, ctx, server: int = None):
         if not server:
             await ctx.reply('Specify a server number to restart')
@@ -72,7 +69,7 @@ class Minecraft(commands.Cog):
             async def remind():
                 await ctx.reply('Server\'s online')
 
-            success = self.aternos[server].restart(remind)
+            success = self._aternos[server].restart(remind)
             if success:
                 await ctx.reply('Server\'s restarting')
         except IndexError:
