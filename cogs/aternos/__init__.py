@@ -104,4 +104,5 @@ class Minecraft(commands.Cog):
 
 def setup(bot):
     # hardcoded session id TODO: make config file
-    bot.add_cog(Minecraft(bot, 'vJNZi3yIpvR0ug0DeUUR828XoJ6cIH36Yrv4vUNevjamO1Tje31577A1rRaH3eHWGwBPa0Yxm6jKjSFVT8o2UQ8r3Go89JrzVUpa'))
+    session_id = ''
+    bot.add_cog(Minecraft(bot, session_id))
