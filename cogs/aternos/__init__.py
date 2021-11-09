@@ -11,12 +11,30 @@ class Minecraft(commands.Cog):
 
     @commands.group(aliases=['minecraft', 'mc'])
     async def aternos(self, ctx):
+        """Aternos commands
+
+        commands
+        status [<server num>] - show server status
+        start [<server num>] - start server
+        stop [<server num>] - close server
+        restart [<server num>] - restart server
+        """
 
         if not ctx.invoked_subcommand:
             await ctx.reply(embed=self._aternos.embed)
 
     @aternos.group(aliases=['info'])
     async def status(self, ctx, server: int = None):
+        """Show server status
+
+        Shown info
+        - server ip
+        - online status
+        - player count
+        - server software
+        - waiting time
+        """
+
         if not server:
             await ctx.reply(embed=self._aternos.embed)
             return
@@ -28,6 +46,8 @@ class Minecraft(commands.Cog):
 
     @aternos.group(aliases=['open', 'on'])
     async def start(self, ctx, server: int = None):
+        """Start server. Reminds when server's online"""
+
         if not server:
             await ctx.reply('Specify a server number to start')
             return
@@ -46,6 +66,8 @@ class Minecraft(commands.Cog):
 
     @aternos.group(aliases=['close', 'off'])
     async def stop(self, ctx, server: int = None):
+        """Close server"""
+
         if not server:
             await ctx.reply('Specify a server number to stop')
             return
@@ -61,6 +83,8 @@ class Minecraft(commands.Cog):
 
     @aternos.group(aliases=['reset'])
     async def restart(self, ctx, server: int = None):
+        """Restart server. Reminds when server's online"""
+
         if not server:
             await ctx.reply('Specify a server number to restart')
             return
@@ -79,4 +103,5 @@ class Minecraft(commands.Cog):
 
 
 def setup(bot):
+    # hardcoded session id TODO: make config file
     bot.add_cog(Minecraft(bot, 'vJNZi3yIpvR0ug0DeUUR828XoJ6cIH36Yrv4vUNevjamO1Tje31577A1rRaH3eHWGwBPa0Yxm6jKjSFVT8o2UQ8r3Go89JrzVUpa'))
