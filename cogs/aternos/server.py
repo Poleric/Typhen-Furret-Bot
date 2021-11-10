@@ -107,7 +107,7 @@ class Server:
 
                 # defining atob for js2py
                 def atob(s):
-                    return base64.b64decode(s).decode('utf-8')  # decode base64, and convert to string
+                    return base64.b64decode(str(s)).decode('utf-8')  # decode base64, and convert to string
 
                 context = js2py.EvalJs({'atob': atob})  # adding atob to js2py
                 self._token = context.eval(actual_token)  # evaluate js
