@@ -152,6 +152,11 @@ class Queue:
         self.voice_client.stop()
         return self.playing
 
+    def stop(self):
+        """Stop playing and cleanup"""
+        self.clear()
+        self.skip()
+
     def embed(self, page: int = 1) -> Embed:
         # Error checking
         if page < 1 or page > self.max_page:

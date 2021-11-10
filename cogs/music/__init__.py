@@ -281,7 +281,7 @@ class Music(commands.Cog):
         """Disconnect and clear queue"""
         current_queue = self.queues[ctx.guild.id]
 
-        current_queue.clear()
+        current_queue.stop()
         await ctx.voice_client.disconnect()
         del self.queues[ctx.guild.id]
 
