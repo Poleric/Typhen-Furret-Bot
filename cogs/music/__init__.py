@@ -10,6 +10,7 @@ from datetime import timedelta
 
 from discord import VoiceChannel, Embed
 from discord.ext import commands
+from discord.ext.commands import MissingRequiredArgument
 
 
 class Music(commands.Cog):
@@ -122,6 +123,19 @@ class Music(commands.Cog):
     async def soundcloud(self, ctx, *, query: str):
         """Use SoundCloud to search and play"""
         await ctx.invoke(self.play, query=query, extractor=SoundCloud())
+
+    @play.error
+    @youtube.error
+    @soundcloud.error
+    async def play_error(self, ctx, exception):
+        match exception:
+            case MissingRequiredArgument():
+                await ctx.reply('No query found.\n'
+                                'Supported sites includes:\n'
+                                '- YouTube\n'
+                                '- SoundCloud')
+            case _:
+                raise exception
 
     @commands.command()
     async def search(self, ctx, number_of_results: Optional[int] = 10, *, query: str):  # TODO: support searching for other extractors
