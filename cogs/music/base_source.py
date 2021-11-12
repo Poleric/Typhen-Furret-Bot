@@ -5,7 +5,10 @@ import re
 
 
 def clean_timestamp(timestamp: str, milisecond: bool) -> str:
-    hours, minutes, seconds, miliseconds = re.match(r'(\d+):(\d+):(\d+)(?:.(\d+))?', timestamp).groups('')
+    days, hours, minutes, seconds, miliseconds = re.match(r'(?:(\d+) days?, )?(\d+):(\d+):(\d+)(?:.(\d+))?', timestamp).groups('')
+    if days:  # if timedelta string > 24 hours, return original string
+        return timestamp
+
     clean = ''
     if not hours == '0':
         clean += f'{hours}:'
