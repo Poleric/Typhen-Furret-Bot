@@ -11,6 +11,10 @@ from discord import Embed
 
 
 class YouTube(BaseExtractor):
+    quiet: bool = True  # change to False for debugging
+    timeout: int = 300  # timeout for 5 minutes, youtube-dl defaults to 10 min
+    # cookie_path = r'./cogs/music/cookies.txt'
+
     @dataclass(slots=True)
     class YouTubeBaseSong(BaseSong):
         def __init__(self, **kwargs):
@@ -67,9 +71,11 @@ class YouTube(BaseExtractor):
 
     async def _get_song(self, query_or_url: str) -> YouTubeBaseSong:
         ydl_options = {
-            'quiet': True,
+            'quiet': self.quiet,
 
             'format': 'bestaudio/best',
+            'socket_timeout': self.timeout,
+            # 'cookiefile': self.cookie_path,
             'source_address': '0.0.0.0',
             'postprocessor_args': ['-threads', '1']
         }
@@ -88,9 +94,11 @@ class YouTube(BaseExtractor):
             raise ValueError(f'{url} is not a playlist url')
 
         ydl_options = {
-            'quiet': True,
+            'quiet': self.quiet,
 
             'extract_flat': True,
+            'socket_timeout': self.timeout,
+            # 'cookiefile': self.cookie_path,
             'source_address': '0.0.0.0',
             'postprocessor_args': ['-threads', '1']
         }
@@ -102,9 +110,11 @@ class YouTube(BaseExtractor):
 
     async def search(self, query: str, results=10) -> AsyncIterable[YouTubeResult]:
         ydl_options = {
-            'quiet': True,
+            'quiet': self.quiet,
 
             'extract_flat': True,
+            'socket_timeout': self.timeout,
+            # 'cookiefile': self.cookie_path,
             'source_address': '0.0.0.0',
             'postprocessor_args': ['-threads', '1']
         }

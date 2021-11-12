@@ -11,6 +11,9 @@ from discord import Embed
 
 
 class SoundCloud(BaseExtractor):
+    quiet = True
+    timeout: int = 300
+
     @dataclass(slots=True)
     class SoundCloudBaseSong(BaseSong):
         def __init__(self, **kwargs):
@@ -51,9 +54,10 @@ class SoundCloud(BaseExtractor):
 
     async def _get_song(self, query_or_url) -> SoundCloudBaseSong:
         ydl_options = {
-            'quiet': True,
+            'quiet': self.quiet,
 
             'format': 'bestaudio/best',
+            'socket_timeout': self.timeout,
             'source_address': '0.0.0.0',
             'postprocessor_args': ['-threads', '1']
         }
@@ -72,9 +76,10 @@ class SoundCloud(BaseExtractor):
             raise ValueError(f'{url} is not a playlist url')
 
         ydl_options = {
-            'quiet': True,
+            'quiet': self.quiet,
 
             'extract_flat': True,
+            'socket_timeout': self.timeout,
             'source_address': '0.0.0.0',
             'postprocessor_args': ['-threads', '1']
         }
