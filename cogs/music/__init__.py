@@ -7,6 +7,7 @@ import json
 import asyncio
 from typing import Optional
 from datetime import timedelta
+from youtube_dl.utils import ExtractorError, DownloadError
 
 from discord import VoiceChannel, Embed
 from discord.ext import commands
@@ -70,7 +71,6 @@ class Music(commands.Cog):
     async def play(self, ctx, *, query: str, extractor: BaseExtractor = None):
         """Add the specific song from url or query"""
         current_queue = self.queues[ctx.guild.id]
-        empty_queue = current_queue.playing is None
         if not extractor:
             if YouTube.YT_REGEX.match(query):
                 extractor = YouTube()
@@ -87,33 +87,53 @@ class Music(commands.Cog):
             case BaseSong():
                 current_queue.add(result)
 
-                # song add response IF the queue is not empty before adding songs
-                if not empty_queue:
+                # check if queue is empty
+                # is empty - play song and reply the song name
+                # is not empty - reply song added embed
+                if current_queue.playing is None:
+                    current_queue.play()
+                    await ctx.send(f'Playing `{result}`')
+                else:
                     embed = result.embed
                     embed.add_field(name='Position in queue', value=str(len(current_queue)))
                     await ctx.reply(embed=embed)
             case BasePlaylist():
                 # add songs concurrently
-                tasks = [asyncio.create_task(extractor.process_query(url, ctx.author)) for url in result.songs_url]
+                async def get_song_with_exception_handling(url):
+                    try:
+                        return await extractor.process_query(url, ctx.author)
+                    except (ExtractorError, DownloadError):
+                        await ctx.send(f'Failed to retrieve data for `{url}`, please try again later')
+                tasks = [asyncio.create_task(get_song_with_exception_handling(url)) for url in result.songs_url]
 
                 # function for adding songs from the tasks
                 async def add_songs():
                     for task in tasks:
                         song = await task
-                        current_queue.add(song)
+                        if song:
+                            current_queue.add(song)
 
-                asyncio.create_task(add_songs())
+                add_song_task = asyncio.create_task(add_songs())
 
+                first_song = await tasks[0]
                 # playlist add response
                 embed = result.embed
-                embed.set_thumbnail(url=(await tasks[0]).thumbnail_url)  # take first song thumbnail
+                embed.set_thumbnail(url=first_song.thumbnail_url)  # take first song thumbnail
                 await ctx.reply(embed=embed)
 
-                result = await tasks[0]
+                if current_queue.playing is None:  # if adding playlist as first item
+                    # "play" song and immediately pause, giving option to resume
+                    current_queue.play()
+                    ctx.voice_client.pause()
 
-        if empty_queue:
-            current_queue.play()
-            await ctx.reply(f'Playing `{result}`')
+                    # for lower end hardware
+                    await ctx.reply('Songs are being added, you can use `resume` command to play but keep in mind it will be crackly at parts due to hardware limitations.\n'
+                                    'Will automatically start playing once finished adding songs.')
+
+                    await add_song_task  # wait till finish adding songs
+                    if ctx.voice_client.is_paused():  # automatically resume playing
+                        ctx.voice_client.resume()
+                        await ctx.send(f'Playing `{first_song}`')
 
     @commands.command(aliases=['yt'])
     async def youtube(self, ctx, *, query: str):
