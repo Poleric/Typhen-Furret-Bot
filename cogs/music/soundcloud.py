@@ -54,7 +54,6 @@ class SoundCloud(BaseExtractor):
             'quiet': True,
 
             'format': 'bestaudio/best',
-            'socket_timeout': 10,
             'source_address': '0.0.0.0',
             'postprocessor_args': ['-threads', '1']
         }
@@ -76,7 +75,6 @@ class SoundCloud(BaseExtractor):
             'quiet': True,
 
             'extract_flat': True,
-            'socket_timeout': 10,
             'source_address': '0.0.0.0',
             'postprocessor_args': ['-threads', '1']
         }
