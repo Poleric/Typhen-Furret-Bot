@@ -216,6 +216,7 @@ class Music(commands.Cog):
                 return not user.bot and reaction.emoji in ('⬅️', '➡️')
 
             while True:
+                max_page = current_queue.max_page
                 try:
                     reaction, user = await self.bot.wait_for('reaction_add', timeout=10, check=check)
                 except asyncio.TimeoutError:
