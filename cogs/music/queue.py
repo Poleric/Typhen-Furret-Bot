@@ -138,7 +138,7 @@ class Queue:
 
     def play_next(self, error):
         if error:
-            print(f'{datetime.now}: {error=}\n')
+            print(f'[{datetime.now()}] [PLAYER ERROR]: {error=}\n')
         match self.loop:
             case LoopType.LOOP_QUEUE:
                 self._songs.append(self.playing)

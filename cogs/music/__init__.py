@@ -51,12 +51,12 @@ class Music(commands.Cog):
         """Join a voice channel. Default to your current voice channel if not specified"""
         current_queue = self.queues[ctx.guild.id]
 
-        # if channel is not specified
+        # if channel is not specified, takes author's channel
         if not channel:
             if ctx.author.voice.channel:
                 channel = ctx.author.voice.channel
             else:
-                await ctx.reply('No voice channel found')
+                await ctx.reply('You\'re not in a voice channel')
                 return
 
         # if voice_client == None (first time init) OR voice_client not connected (kicked out or disconnected)
@@ -79,7 +79,8 @@ class Music(commands.Cog):
             else:
                 extractor = self.default_extractor()  # default
 
-        await ctx.invoke(self.join)
+        if not ctx.voice_client or not ctx.voice_client.is_connected():
+            await ctx.invoke(self.join)
         async with ctx.typing():
             result = await extractor.process_query(query, requester=ctx.author)
         match result:
@@ -278,8 +279,11 @@ class Music(commands.Cog):
     async def remove(self, ctx, position: int):
         """Remove the song on a specified position"""
         current_queue = self.queues[ctx.guild.id]
-
-        removed = current_queue.pop(position-1)
+        try:
+            removed = current_queue.pop(position-1)
+        except IndexError:
+            await ctx.reply(f'No song found in position `{position}`')
+            return
         await ctx.reply(f'Removed `{removed.title}`')
 
     @commands.command()
