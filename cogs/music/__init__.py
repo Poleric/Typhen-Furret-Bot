@@ -86,7 +86,7 @@ class Music(commands.Cog):
             try:
                 result = await extractor.process_query(query, requester=ctx.author)
             except (DownloadError, ExtractorError) as e:
-                if re.search(r'HTTP Error 429', e):
+                if re.search(r'HTTP Error 429', str(e)):
                     await ctx.reply('Too many requests, please try again later')
                     return
                 await ctx.reply('Failed to retrieve data, please try again later')
@@ -117,7 +117,7 @@ class Music(commands.Cog):
                             if song:
                                 current_queue.add(song)
                         except (DownloadError, ExtractorError):
-                            if re.search(r'HTTP Error 429', e):
+                            if re.search(r'HTTP Error 429', str(e)):
                                 await ctx.reply('Too many requests, please try again later')
                                 return
                             await ctx.reply(f'Failed to retrieve data for {result.songs_url[i]}, please try again later')
