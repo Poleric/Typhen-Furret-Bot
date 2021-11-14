@@ -3,6 +3,7 @@ from cogs.music.youtube import YouTube
 from cogs.music.soundcloud import SoundCloud
 from cogs.music.queue import LoopType, Queue
 
+import re
 import json
 import asyncio
 from typing import Optional
@@ -84,9 +85,12 @@ class Music(commands.Cog):
         async with ctx.typing():
             try:
                 result = await extractor.process_query(query, requester=ctx.author)
-            except Exception as e:
-                print(type(e),e)
-                await ctx.send(f'Failed to retrieve data, please try again later')
+            except (DownloadError, ExtractorError) as e:
+                if re.search(r'HTTP Error 429', e):
+                    await ctx.reply('Too many requests, please try again later')
+                    return
+                await ctx.reply('Failed to retrieve data, please try again later')
+                return
         match result:
             case BaseSong():
                 current_queue.add(result)
@@ -107,14 +111,17 @@ class Music(commands.Cog):
 
                 # function for adding songs from the tasks AND catching exception
                 async def add_songs():
-                    for task in tasks:
+                    for i, task in enumerate(tasks):
                         try:
                             song = await task
                             if song:
                                 current_queue.add(song)
-                        except Exception as e:
-                            print(type(e), e)
-                            await ctx.send(f'Failed to retrieve data, please try again later')
+                        except (DownloadError, ExtractorError):
+                            if re.search(r'HTTP Error 429', e):
+                                await ctx.reply('Too many requests, please try again later')
+                                return
+                            await ctx.reply(f'Failed to retrieve data for {result.songs_url[i]}, please try again later')
+                            return
 
                 add_song_task = asyncio.create_task(add_songs())
 
