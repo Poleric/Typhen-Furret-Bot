@@ -82,7 +82,11 @@ class Music(commands.Cog):
         if not ctx.voice_client or not ctx.voice_client.is_connected():
             await ctx.invoke(self.join)
         async with ctx.typing():
-            result = await extractor.process_query(query, requester=ctx.author)
+            try:
+                result = await extractor.process_query(query, requester=ctx.author)
+            except Exception as e:
+                print(type(e),e)
+                await ctx.send(f'Failed to retrieve data, please try again later')
         match result:
             case BaseSong():
                 current_queue.add(result)
@@ -99,19 +103,18 @@ class Music(commands.Cog):
                     await ctx.reply(embed=embed)
             case BasePlaylist():
                 # add songs concurrently
-                async def get_song_with_exception_handling(url):
-                    try:
-                        return await extractor.process_query(url, ctx.author)
-                    except (ExtractorError, DownloadError):
-                        await ctx.send(f'Failed to retrieve data for `{url}`, please try again later')
-                tasks = [asyncio.create_task(get_song_with_exception_handling(url)) for url in result.songs_url]
+                tasks = [asyncio.create_task(extractor.process_query(url, ctx.author)) for url in result.songs_url]
 
-                # function for adding songs from the tasks
+                # function for adding songs from the tasks AND catching exception
                 async def add_songs():
                     for task in tasks:
-                        song = await task
-                        if song:
-                            current_queue.add(song)
+                        try:
+                            song = await task
+                            if song:
+                                current_queue.add(song)
+                        except Exception as e:
+                            print(type(e), e)
+                            await ctx.send(f'Failed to retrieve data, please try again later')
 
                 add_song_task = asyncio.create_task(add_songs())
 
@@ -127,7 +130,7 @@ class Music(commands.Cog):
                     ctx.voice_client.pause()
 
                     # for lower end hardware
-                    await ctx.reply('Songs are being added, you can use `resume` command to play but keep in mind it will be crackly at parts due to hardware limitations.\n'
+                    await ctx.reply('Songs are being added in the background, you can use `resume` command to play but keep in mind it will be crackly at parts due to hardware limitations.\n'
                                     'Will automatically start playing once finished adding songs.')
 
                     await add_song_task  # wait till finish adding songs
