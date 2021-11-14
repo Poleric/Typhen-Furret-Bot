@@ -12,8 +12,8 @@ from discord import Embed
 
 class YouTube(BaseExtractor):
     quiet: bool = True  # change to False for debugging
-    timeout: int = 300  # timeout for 5 minutes, youtube-dl defaults to 10 min
-    # cookie_path = r'./cogs/music/cookies.txt'
+    timeout: int = 60  # timeout for 1 minutes, youtube-dl defaults to 10 min
+    cookie_path = r'./cogs/music/cookies.txt'
 
     @dataclass(slots=True)
     class YouTubeBaseSong(BaseSong):
@@ -75,7 +75,7 @@ class YouTube(BaseExtractor):
 
             'format': 'bestaudio/best',
             'socket_timeout': self.timeout,
-            # 'cookiefile': self.cookie_path,
+            'cookiefile': self.cookie_path,
             'source_address': '0.0.0.0',
             'postprocessor_args': ['-threads', '1']
         }
@@ -98,7 +98,7 @@ class YouTube(BaseExtractor):
 
             'extract_flat': True,
             'socket_timeout': self.timeout,
-            # 'cookiefile': self.cookie_path,
+            'cookiefile': self.cookie_path,
             'source_address': '0.0.0.0',
             'postprocessor_args': ['-threads', '1']
         }
@@ -114,7 +114,7 @@ class YouTube(BaseExtractor):
 
             'extract_flat': True,
             'socket_timeout': self.timeout,
-            # 'cookiefile': self.cookie_path,
+            'cookiefile': self.cookie_path,
             'source_address': '0.0.0.0',
             'postprocessor_args': ['-threads', '1']
         }
