@@ -124,10 +124,10 @@ class Queue:
 
     def play(self) -> None:
         """Start or resume playing from the queue"""
-
         if self.voice_client is None:  # Check if theres a voice client in the first place
             raise self.NotConnectedToVoice('No VoiceClient found')
-        if not self.voice_client.is_paused() and not self.voice_client.is_playing():
+
+        if not self.playing:
             self.playing = self._songs.popleft()
             next_source = FFmpegPCMAudio(source=self.playing.source_url, **Queue.ffmpeg_options)
             while not next_source.read():
@@ -139,11 +139,13 @@ class Queue:
     def play_next(self, error):
         if error:
             print(f'[{datetime.now()}] [PLAYER ERROR]: {error=}\n')
+
         match self.loop:
             case LoopType.LOOP_QUEUE:
                 self._songs.append(self.playing)
             case LoopType.LOOP_SONG:
                 self._songs.appendleft(self.playing)
+        self.playing = None
         if self._songs:
             self.play()
 
