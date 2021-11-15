@@ -11,12 +11,11 @@ from discord import Embed
 
 
 class YouTube(BaseExtractor):
-    quiet: bool = True  # change to False for debugging
-    timeout: int = 60  # timeout for 1 minutes, youtube-dl defaults to 10 min
     cookie_path = r'./cogs/music/cookies.txt'
+    COLOR = 0xFF0000
 
     @dataclass(slots=True)
-    class YouTubeBaseSong(BaseSong):
+    class YouTubeSong(BaseSong):
         def __init__(self, **kwargs):
             self.title = kwargs.get('title')
             self.webpage_url = kwargs.get('webpage_url')
@@ -28,14 +27,14 @@ class YouTube(BaseExtractor):
 
         @property
         def embed(self) -> Embed:
-            embed = Embed(title='Song added', description=f'[{self.title}]({self.webpage_url})', color=0x33c9a4)
+            embed = Embed(title='Song added', description=f'[{self.title}]({self.webpage_url})', color=YouTube.COLOR)
             embed.set_thumbnail(url=self.thumbnail_url)
             embed.add_field(name='Channel', value=self.uploader)
             embed.add_field(name='Duration', value=timestamp(self.duration))
             return embed
 
     @dataclass(slots=True)
-    class YouTubeBasePlaylist(BasePlaylist):
+    class YouTubePlaylist(BasePlaylist):
         uploader: str
 
         def __init__(self, **kwargs):
@@ -46,7 +45,7 @@ class YouTube(BaseExtractor):
 
         @property
         def embed(self) -> Embed:
-            embed = Embed(title='Playlist Added', description=f'[{self.title}]({self.webpage_url})', color=0x33c9a4)
+            embed = Embed(title='Playlist Added', description=f'[{self.title}]({self.webpage_url})', color=YouTube.COLOR)
             if self.uploader:
                 embed.add_field(name='Channel', value=self.uploader)
             embed.add_field(name='Enqueued', value=f'{len(self.songs_url)} songs')
@@ -62,62 +61,40 @@ class YouTube(BaseExtractor):
             self.uploader = kwargs.get('uploader')
             self.duration = timedelta(seconds=kwargs.get('duration'))
 
-    YT_REGEX = re.compile(r'((?:https?:)?//)?((?:www|m)\.)?(youtube\.com|youtu.be)(/(?:[\w\-]+\?v=|embed/|v/)?)([\w\-]+)(\S+)')  # youtube urls, include embeds, and link copy
+    REGEX = re.compile(r'((?:https?:)?//)?((?:www|m)\.)?(youtube\.com|youtu.be)(/(?:[\w\-]+\?v=|embed/|v/)?)([\w\-]+)(\S+)')  # youtube urls, include embeds, and link copy
     VIDEO_REGEX = re.compile(r'https?://www.youtube.com/watch\?v=[^&\s]+')  # youtube VIDEO url, usually copied from address bar
     PLAYLIST_REGEX = re.compile(r'https?://(?:www\.)?youtube.com/.+list=[^&]+')  # youtube PLAYLIST url
 
     def __str__(self):
         return 'YouTube'
 
-    async def _get_song(self, query_or_url: str) -> YouTubeBaseSong:
-        ydl_options = {
-            'quiet': self.quiet,
-
-            'format': 'bestaudio/best',
-            'socket_timeout': self.timeout,
-            'cookiefile': self.cookie_path,
-            'source_address': '0.0.0.0',
-            'postprocessor_args': ['-threads', '1']
-        }
+    async def _get_song(self, query_or_url: str) -> YouTubeSong:
+        ydl_options = self.ydl_options
 
         with YoutubeDL(ydl_options) as ydl:
             loop = asyncio.get_event_loop()
-            if not self.YT_REGEX.match(query_or_url):  # need to search yt
+            if not self.REGEX.match(query_or_url):  # need to search yt
                 data = await loop.run_in_executor(None, lambda: ydl.extract_info(f'ytsearch:{query_or_url}', download=False))
                 data = data['entries'][0]
             else:
                 data = await loop.run_in_executor(None, lambda: ydl.extract_info(query_or_url, download=False))
-            return self.YouTubeBaseSong(**data)
+        return self.YouTubeSong(**data)
 
-    async def _get_playlist(self, url) -> YouTubeBasePlaylist:
+    async def _get_playlist(self, url) -> YouTubePlaylist:
         if not self.PLAYLIST_REGEX.match(url):
-            raise ValueError(f'{url} is not a playlist url')
+            raise TypeError(f'{url} is not a YouTube playlist url')
 
-        ydl_options = {
-            'quiet': self.quiet,
-
-            'extract_flat': True,
-            'socket_timeout': self.timeout,
-            'cookiefile': self.cookie_path,
-            'source_address': '0.0.0.0',
-            'postprocessor_args': ['-threads', '1']
-        }
+        ydl_options = self.ydl_options
+        ydl_options['extract_flat'] = True
 
         with YoutubeDL(ydl_options) as ydl:
             loop = asyncio.get_event_loop()
-            data = await loop.run_in_executor(None, lambda: ydl.extract_info(f'{url}', download=False))
-        return self.YouTubeBasePlaylist(**data)
+            data = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=False))
+        return self.YouTubePlaylist(**data)
 
     async def search(self, query: str, results=10) -> AsyncIterable[YouTubeResult]:
-        ydl_options = {
-            'quiet': self.quiet,
-
-            'extract_flat': True,
-            'socket_timeout': self.timeout,
-            'cookiefile': self.cookie_path,
-            'source_address': '0.0.0.0',
-            'postprocessor_args': ['-threads', '1']
-        }
+        ydl_options = self.ydl_options
+        ydl_options['extract_flat'] = True
 
         with YoutubeDL(ydl_options) as ydl:
             loop = asyncio.get_event_loop()
@@ -126,7 +103,7 @@ class YouTube(BaseExtractor):
         for video in data['entries']:
             yield self.YouTubeResult(**video)
 
-    async def process_query(self, query: str, requester) -> YouTubeBaseSong | YouTubeBasePlaylist:
+    async def process_query(self, query: str, requester) -> YouTubeSong | YouTubePlaylist:
         if self.PLAYLIST_REGEX.match(query):
             return await self._get_playlist(query)
         else:

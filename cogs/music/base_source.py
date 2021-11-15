@@ -23,7 +23,24 @@ def timestamp(time: timedelta, milisecond: bool = False):
 
 
 class BaseExtractor:
-    pass
+    quiet: bool = True  # change to False for debugging
+    timeout: int = 60  # timeout for 1 minutes, youtube-dl defaults to 10 min
+    cookie_path = r''
+
+    @property
+    def ydl_options(self) -> dict:
+        options = {
+            'quiet': self.quiet,
+
+            'format': 'bestaudio/best',
+            'socket_timeout': self.timeout,
+            'source_address': '0.0.0.0',
+            'postprocessor_args': ['-threads', '1']
+        }
+        if self.cookie_path:
+            options['cookiefile'] = self.cookie_path
+
+        return options
 
 
 @dataclass(slots=True)
