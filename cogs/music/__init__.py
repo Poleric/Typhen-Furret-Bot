@@ -121,7 +121,7 @@ class Music(commands.Cog):
                             song = await task
                             if song:
                                 current_queue.add(song)
-                        except (DownloadError, ExtractorError):
+                        except (DownloadError, ExtractorError) as e:
                             if re.search(r'HTTP Error 429', str(e)):
                                 await ctx.reply('Too many requests, please try again later')
                                 return
