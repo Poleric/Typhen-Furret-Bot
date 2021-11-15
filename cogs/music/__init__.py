@@ -1,6 +1,7 @@
 from cogs.music.base_source import BaseExtractor, BaseSong, BasePlaylist, timestamp
 from cogs.music.youtube import YouTube
 from cogs.music.soundcloud import SoundCloud
+from cogs.music.bandcamp import Bandcamp
 from cogs.music.queue import LoopType, Queue
 
 import re
@@ -32,6 +33,8 @@ class Music(commands.Cog):
                 self._extractor = YouTube
             case 'sc' | 'soundcloud':
                 self._extractor = SoundCloud
+            case 'bd' | 'bandcamp':
+                self._extractor = Bandcamp
 
     default_extractor = property(get_default_extractor, set_default_extractor)
 
@@ -73,10 +76,12 @@ class Music(commands.Cog):
         """Add the specific song from url or query"""
         current_queue = self.queues[ctx.guild.id]
         if not extractor:
-            if YouTube.YT_REGEX.match(query):
+            if YouTube.REGEX.match(query):
                 extractor = YouTube()
-            elif SoundCloud.SC_REGEX.match(query):
+            elif SoundCloud.REGEX.match(query):
                 extractor = SoundCloud()
+            elif Bandcamp.REGEX.match(query):
+                extractor = Bandcamp()
             else:
                 extractor = self.default_extractor()  # default
 
@@ -155,16 +160,23 @@ class Music(commands.Cog):
         """Use SoundCloud to search and play"""
         await ctx.invoke(self.play, query=query, extractor=SoundCloud())
 
+    @commands.command(aliases=['bd'])
+    async def bandcamp(self, ctx, *, query: str):
+        """Use Bandcamp to play"""
+        await ctx.invoke(self.play, query=query, extractor=Bandcamp())
+
     @play.error
     @youtube.error
     @soundcloud.error
+    @bandcamp.error
     async def play_error(self, ctx, exception):
         match exception:
             case MissingRequiredArgument():
                 await ctx.reply('No query found.\n'
                                 'Supported sites includes:\n'
                                 '- YouTube\n'
-                                '- SoundCloud')
+                                '- SoundCloud\n'
+                                '- Bandcamp (urls only)')
             case _:
                 raise exception
 
@@ -368,6 +380,7 @@ class Music(commands.Cog):
         Current supported website list
         - YouTube
         - SoundCloud
+        - Bandcamp
         """
 
         if not website:
