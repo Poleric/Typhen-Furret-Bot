@@ -37,7 +37,7 @@ class Aternos:
             return self.servers
         return self.servers[item - 1]
 
-    _last_read = 0
+    _last_read: float = 0  # time in seconds
     _html = None
     @property
     def html(self):
@@ -47,11 +47,14 @@ class Aternos:
             self._html = BeautifulSoup(ret.content, 'lxml')
         return self._html
 
+    _servers = None
     @property
     def servers(self):
-        server_ids = self.html.find_all('div', class_='server-id')
-        session_id = self._cookies['ATERNOS_SESSION']
-        return [Server(session_id, server_id.get_text(strip=True).strip('#')) for server_id in server_ids]
+        if time.time() - self._last_read > 14400:  # reusing old servers list if its 4 hours ago
+            server_ids = self.html.find_all('div', class_='server-id')
+            session_id = self._cookies['ATERNOS_SESSION']
+            self._servers = [Server(session_id, server_id.get_text(strip=True).strip('#')) for server_id in server_ids]
+        return self._servers
 
     @property
     def embed(self) -> Embed:
