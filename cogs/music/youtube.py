@@ -11,7 +11,7 @@ from discord import Embed
 
 
 class YouTube(BaseExtractor):
-    cookie_path = r'./cogs/music/cookies.txt'
+    cookie_path = r'./cogs/music/youtube_cookies.txt'
     COLOR = 0xFF0000
 
     @dataclass(slots=True)
