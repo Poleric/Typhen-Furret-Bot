@@ -2,11 +2,18 @@ import os
 import traceback
 import json
 import time
-from datetime import datetime
+import logging
 import socket
 from discord import Intents, AllowedMentions, CustomActivity, Status, Game
-from discord.ext.commands import is_owner, Bot, when_mentioned_or, has_permissions, CommandNotFound
-from discord.ext.commands.errors import ExtensionNotLoaded, ExtensionFailed, ExtensionAlreadyLoaded
+from discord.ext.commands import is_owner, Bot, when_mentioned_or, has_permissions
+from discord.ext.commands.errors import ExtensionNotLoaded, ExtensionFailed, ExtensionAlreadyLoaded, CommandNotFound, MissingRequiredArgument
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] [%(levelname)s] [%(module)s]: %(message)s',
+    datefmt='%H:%M:%S'
+)
 
 
 with open('bot.json', 'r') as data:
@@ -18,18 +25,9 @@ def commit_config():
         json.dump(bot_config, config)
 
 
-def is_connected():
-    try:
-        # connect to the host -- tells us if the host is actually
-        # reachable
-        socket.create_connection(("1.1.1.1", 53))
-        return True
-    except OSError:
-        pass
-    return False
-
-
-while not is_connected():
+# sleep until have network connection
+# for startup scripts
+while not socket.create_connection(("1.1.1.1", 53)):  # while cant establish connection
     time.sleep(1)
 
 bot = Bot(command_prefix=when_mentioned_or(bot_config['prefix']),
@@ -57,22 +55,22 @@ def _reload(extension):
 
 @bot.event
 async def on_ready():
-    """Trigger when bot is online"""
-
-    print(f'Bot is logged in as\n'
-          f'name: {bot.user}\n'
-          f'id: {bot.user.id}\n'
-          f'on {datetime.now()}')
+    """Called when bot is connected"""
+    logging.info(f'Logged in as {bot.user}')
 
 
 @bot.event
-async def on_command_error(_, error):
+async def on_command_error(ctx, exc):
     """Quietly handles unknown commands"""
 
-    if isinstance(error, CommandNotFound):
-        return
-    print(f'\n[{datetime.now()}] [ERROR]')
-    raise error
+    match exc:
+        case CommandNotFound() | MissingRequiredArgument():
+            pass
+        case _:
+            logging.error(
+                f'Ignoring exception in command {ctx.command}:\n'
+                f'{"".join(traceback.format_exception(type(exc), exc, exc.__traceback__))}'
+            )
 
 
 @bot.command()
@@ -125,11 +123,12 @@ async def ping(ctx):
 
 @bot.command()
 @has_permissions(manage_roles=True)
-async def prefix(_, prefix):
+async def prefix(ctx, prefix):
     bot.command_prefix = prefix
     bot_config['prefix'] = prefix
     commit_config()
     await bot.change_presence(activity=CustomActivity(name=f'Pokémon | {prefix}help'))
+    await ctx.reply(f'Prefix changed to `{bot.command_prefix}`')
 
 
 # Initialise all local cogs on start
@@ -138,7 +137,7 @@ for folder in os.listdir('./cogs'):
         if os.path.isdir(f'./cogs/{folder}'):
             _load(folder)
     except ExtensionFailed:
-        traceback.print_exc()
+        logging.exception('')
 
 
 # Read token
