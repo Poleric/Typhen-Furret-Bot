@@ -1,4 +1,5 @@
 from cogs.aternos.server import Aternos, Server
+from cogs.aternos.status import Online, Offline, Crashed
 from cogs.aternos.exceptions import *
 
 from discord.ext import commands
@@ -53,8 +54,14 @@ class Minecraft(commands.Cog):
             return
 
         try:
-            async def remind():
-                await ctx.reply('Server\'s online')
+            async def remind(server_status: bool):
+                match server_status:
+                    case Online():
+                        await ctx.reply('Server\'s online')
+                    case Crashed():
+                        await ctx.reply('Server crashed')
+                    case Offline():
+                        await ctx.reply('Server went offline, something went wrong')
 
             success = self._aternos[server].start(remind)
             if success:

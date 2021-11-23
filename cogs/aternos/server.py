@@ -307,11 +307,12 @@ class Server:
         while True:
             time.sleep(4)
 
+            # callback with server Status when server is
+            # - online, indicating successful startup
+            # - offline / crashed, indicating something went wrong
             match self.status:
-                case Offline():
-                    return
-                case Online():
-                    callback()
+                case Online() | Offline():
+                    callback(self.status)
                     return
 
     # asynchronous version of when_online
@@ -321,10 +322,8 @@ class Server:
             await asyncio.sleep(4)
 
             match self.status:
-                case Offline():
-                    return
-                case Online():
-                    await callback()
+                case Online() | Offline():
+                    await callback(self.status)
                     return
 
     @property
