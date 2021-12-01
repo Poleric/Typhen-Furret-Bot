@@ -133,6 +133,22 @@ class Minecraft(commands.Cog):
         except ServerNotOnline:
             await ctx.reply('Server is not online')
 
+    @aternos.command(aliases=['player'])
+    async def players(self, ctx, server: int):
+        """Shows the exact players name and status of a server"""
+
+        server = self._aternos[server]
+        if not isinstance(server.status, Online):
+            await ctx.reply('Server\'s not online')
+            return
+
+        players = '\n'.join(f'{player.username} | `{player.status}`' for player in server.players)
+        if not players:
+            players = 'No players online'
+
+        embed = Embed(title=server.ip, description=players)
+        await ctx.reply(embed=embed)
+
 
 def setup(bot):
     # hardcoded session id TODO: make config file
