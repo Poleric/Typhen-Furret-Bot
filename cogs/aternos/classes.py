@@ -1,4 +1,7 @@
+from dataclasses import dataclass
+
 __all__ = (
+    # Statuses
     'Online',
     'Offline',
     'Crashed',
@@ -8,10 +11,13 @@ __all__ = (
     'Restarting',
     'Stopping',
     'Saving',
-    'WaitingInQueue'
+    'WaitingInQueue',
+    # Players / Users
+    'Player'
 )
 
 
+# Statuses
 # Server load process
 # Offline -> Preparing -> Loading -> Starting -> Online -> Stopping -> Saving -> Offline
 class BaseStatus:
@@ -145,3 +151,15 @@ class WaitingInQueue(BaseStatus):
     def est(self) -> str:
         return f'ca. {self.duration} min'
 
+
+# Players / Users
+@dataclass(slots=True)
+class Player:
+    username: str
+    status: str
+
+    def __str__(self):
+        return self.username
+
+    def __repr(self):
+        return f'Player({self.username!r}, {self.status!r})'
