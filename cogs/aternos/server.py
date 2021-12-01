@@ -1,4 +1,4 @@
-from cogs.aternos.status import *
+from cogs.aternos.classes import *
 from cogs.aternos.exceptions import *
 
 import requests
@@ -18,7 +18,6 @@ from string import ascii_lowercase, digits
 # for callbacks and discord embeds
 from threading import Thread
 import asyncio
-from discord import Embed
 from discord.ext import tasks
 
 __all__ = (
@@ -105,12 +104,6 @@ class Aternos:
             self._servers = [Server(session_id, server_id.get_text(strip=True).strip('#')) for server_id in server_ids]
         return self._servers
 
-    @property
-    def embed(self) -> Embed:
-        embed = Embed(title='List of servers')
-        for i, server in enumerate(self.servers, start=1):
-            embed.add_field(name='\u200b', value=f'`{i}.` {server.ip} | `{server.status}`', inline=False)
-        return embed
 
 
 class Server(Aternos):
@@ -347,19 +340,3 @@ class Server(Aternos):
                 case Online() | Offline():
                     await callback(self.status)
                     return
-
-    @property
-    def embed(self) -> Embed:
-        status = self.status
-
-        embed = Embed(title=self.ip, color=status.COLOR)
-        embed.add_field(name='Status', value=str(status))
-
-        match status:
-            case Online():
-                embed.add_field(name='Players', value=self.players)
-            case WaitingInQueue():
-                embed.add_field(name='EST', value=status.est)
-
-        embed.add_field(name='Software', value=f'{self.software} {self.version}')
-        return embed

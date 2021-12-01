@@ -1,14 +1,37 @@
-from cogs.aternos.server import Aternos, Server
-from cogs.aternos.status import Online, Offline, Crashed
+from cogs.aternos.server import Servers, Server
+from cogs.aternos.classes import Online, Offline, Crashed, WaitingInQueue
 from cogs.aternos.exceptions import *
 
+from discord import Embed
 from discord.ext import commands
 
 
 class Minecraft(commands.Cog):
     def __init__(self, bot, session_id):
         self.bot = bot
-        self._aternos = Aternos(session_id)
+        self._aternos = Servers(session_id)
+
+    def server_list_embed(self) -> Embed:
+        embed = Embed(title='List of servers')
+        for i, server in enumerate(self._aternos.servers, start=1):
+            embed.add_field(name='\u200b', value=f'`{i}.` {server.ip} | `{server.status}`', inline=False)
+        return embed
+
+    def server_embed(self, num) -> Embed:
+        server = self._aternos[num]
+
+        status = server.status
+        embed = Embed(title=server.ip, color=status.COLOR)
+        embed.add_field(name='Status', value=str(status))
+
+        match status:
+            case Online():
+                embed.add_field(name='Players', value=server.player_count)
+            case WaitingInQueue():
+                embed.add_field(name='EST', value=status.est)
+
+        embed.add_field(name='Software', value=f'{server.software} {server.version}')
+        return embed
 
     @commands.group(aliases=['minecraft', 'mc'])
     async def aternos(self, ctx):
@@ -19,12 +42,13 @@ class Minecraft(commands.Cog):
         start [<server num>] - start server
         stop [<server num>] - close server
         restart [<server num>] - restart server
+        players [<server num>] - shows players
         """
 
         if not ctx.invoked_subcommand:
-            await ctx.reply(embed=self._aternos.embed)
+            await ctx.reply(embed=self.server_list_embed())
 
-    @aternos.group(aliases=['info'])
+    @aternos.command(aliases=['info'])
     async def status(self, ctx, server: int = None):
         """Show server status
 
@@ -37,15 +61,15 @@ class Minecraft(commands.Cog):
         """
 
         if not server:
-            await ctx.reply(embed=self._aternos.embed)
+            await ctx.reply(embed=self.server_list_embed())
             return
 
         try:
-            await ctx.reply(embed=self._aternos[server].embed)
+            await ctx.reply(embed=self.server_embed(server))
         except IndexError:
             await ctx.reply('Server does not exist')
 
-    @aternos.group(aliases=['open', 'on'])
+    @aternos.command(aliases=['open', 'on'])
     async def start(self, ctx, server: int = None):
         """Start server. Reminds when server's online"""
 
@@ -72,7 +96,7 @@ class Minecraft(commands.Cog):
         except ServerNotOffline:
             await ctx.reply('Server is not offline')
 
-    @aternos.group(aliases=['close', 'off'])
+    @aternos.command(aliases=['close', 'off'])
     async def stop(self, ctx, server: int = None):
         """Close server"""
 
@@ -89,7 +113,7 @@ class Minecraft(commands.Cog):
         except ServerNotOnline:
             await ctx.reply('Server is not online')
 
-    @aternos.group(aliases=['reset'])
+    @aternos.command(aliases=['reset'])
     async def restart(self, ctx, server: int = None):
         """Restart server. Reminds when server's online"""
 
