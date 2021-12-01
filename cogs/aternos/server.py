@@ -21,7 +21,7 @@ import asyncio
 from discord.ext import tasks
 
 __all__ = (
-    'Aternos',
+    'Servers',
     'Server'
 )
 
@@ -30,18 +30,13 @@ class Aternos:
     _TOKEN_SCRIPT_REGEX = re.compile(r'\(\(\) => {(window\[.+])=(window\[.+])\?(.+):(.+);}\)\(\);')
     _URL = 'https://aternos.org/servers/'
 
-    def __init__(self, session_id) -> None:
+    def __init__(self, session_id):
         self._cookies = {
             "ATERNOS_SESSION": session_id
         }
 
         self._headers = requests.utils.default_headers()
         self._headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36"
-
-    def __getitem__(self, item):
-        if item == 0:
-            return self.servers
-        return self.servers[item - 1]
 
     @staticmethod
     # two length 16 base 36 strings separated by ":"
@@ -95,6 +90,17 @@ class Aternos:
             self._last_read = time.time()
         return self._html
 
+
+class Servers(Aternos):
+    def __init__(self, session_id):
+        super().__init__(session_id)
+
+    def __getitem__(self, item):
+        if item == 0:
+            return self.servers
+        return self.servers[item - 1]
+
+    _last_read: float = 0  # time in seconds
     _servers = None
     @property
     def servers(self):
@@ -110,9 +116,9 @@ class Server(Aternos):
     _IP_REGEX = re.compile(r'\w+\.\w+\.\w+')
     _URL = 'https://aternos.org/server/'
 
-    def __init__(self, session_id, server_id) -> None:
+    def __init__(self, session_id, server_id):
         super().__init__(session_id)
-        self._cookies["ATERNOS_SERVER"] = server_id
+        self._cookies['ATERNOS_SERVER'] = server_id
 
     def __str__(self):
         return re.match(r'\w+', self.ip)[0]
