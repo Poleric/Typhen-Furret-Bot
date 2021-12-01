@@ -15,7 +15,8 @@ __all__ = (
 # Server load process
 # Offline -> Preparing -> Loading -> Starting -> Online -> Stopping -> Saving -> Offline
 class BaseStatus:
-    pass
+    def repr(self):
+        return str(self)
 
 
 # Online type statuses
@@ -131,11 +132,16 @@ class WaitingInQueue(BaseStatus):
     """
     COLOR = 0xeb7b59
 
-    def __init__(self, est: str):
-        self.est = est
+    def __init__(self, duration: int):
+        self.duration = duration
 
     def __str__(self):
-        return f'Waiting in queue {self.est} left'
+        return f'Waiting in queue {self.duration} minute{"s" if self.duration > 1 else ""} left'
 
     def __bool__(self):
         return True
+
+    @property
+    def est(self) -> str:
+        return f'ca. {self.duration} min'
+
