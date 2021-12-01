@@ -1,7 +1,10 @@
 __all__ = (
     'ServerNotOffline',
     'ServerNotOnline',
-    'ServerNotInQueue'
+    'ServerNotInQueue',
+    'LogInError',
+    'PageError',
+    'AccessDenied'
 )
 
 
@@ -26,4 +29,16 @@ class ConfirmError(Exception):
 
 
 class ServerNotInQueue(ConfirmError):
+    pass
+
+
+class LogInError(Exception):
+    pass
+
+
+class PageError(Exception):
+    pass
+
+
+class AccessDenied(PageError):
     pass

@@ -83,8 +83,22 @@ class Aternos:
     def html(self, options):
         if options not in self._cached_soup or self._cached_soup[options]['last_read'] > 1:  # reusing cached html
             ret = requests.get(url=f'https://aternos.org/{options}', headers=self._headers, cookies=self._cookies, timeout=10)
+
+            ret.raise_for_status()
+            if ret.url == 'https://aternos.org/go/':
+                raise LogInError('User\'s not logged in')
+            soup = BeautifulSoup(ret.content, 'lxml')
+            if soup.find('div', class_='page-error'):
+                error_type = soup.find('div', class_='page-error-title').get_text(strip=True)
+                error_msg = soup.find('div', class_='page-error-message').get_text(strip=True)
+                match error_type:
+                    case 'Access denied.':
+                        raise AccessDenied(error_msg)
+                    case _:
+                        raise PageError(f'{error_type}: {error_msg}')
+
             self._cached_soup[options] = {
-                'soup': BeautifulSoup(ret.content, 'lxml'),
+                'soup': soup,
                 'last_read': time.time()
             }
         return self._cached_soup[options]['soup']
@@ -300,7 +314,7 @@ class Server(Aternos):
 
     def confirm_thread(self):
         while True:
-            time.sleep(random.randint(5, 15))
+            time.sleep(random.randint(5000, 15000)/1000)
 
             match self.status:
                 case Offline() | Online() | Loading():

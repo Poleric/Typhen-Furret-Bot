@@ -1,3 +1,5 @@
+import logging
+
 from cogs.aternos.server import Servers, Server
 from cogs.aternos.classes import Online, Offline, Crashed, WaitingInQueue
 from cogs.aternos.exceptions import *
@@ -148,6 +150,17 @@ class Minecraft(commands.Cog):
 
         embed = Embed(title=server.ip, description=players)
         await ctx.reply(embed=embed)
+
+    @aternos.error
+    async def aternos_error(self, ctx, exc):
+        match exc:
+            case LogInError():
+                await ctx.reply('Not logged in')
+            case AccessDenied():
+                await ctx.reply('Does not have access')
+            case PageError():
+                logging.error(f'Page error: {exc}')
+                await ctx.reply('Something went wrong')
 
 
 def setup(bot):
