@@ -54,16 +54,17 @@ class Minecraft(commands.Cog):
             return
 
         try:
-            async def remind(server_status: bool):
-                match server_status:
-                    case Online():
-                        await ctx.reply('Server\'s online')
-                    case Crashed():
-                        await ctx.reply('Server crashed')
-                    case Offline():
-                        await ctx.reply('Server went offline, something went wrong')
+            # Disabling callback temporarily to reduce frequency of requests
+            # async def remind(server_status: bool):
+            #     match server_status:
+            #         case Online():
+            #             await ctx.reply('Server\'s online')
+            #         case Crashed():
+            #             await ctx.reply('Server crashed')
+            #         case Offline():
+            #             await ctx.reply('Server went offline, something went wrong')
 
-            success = self._aternos[server].start(remind)
+            success = self._aternos[server].start()
             if success:
                 await ctx.reply('Server\'s starting')
         except IndexError:
