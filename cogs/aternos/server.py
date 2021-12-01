@@ -3,13 +3,19 @@ from cogs.aternos.exceptions import *
 
 import requests
 from bs4 import BeautifulSoup
-import js2py
 import random
-from string import ascii_lowercase, digits
 import time
 import re
-import base64
 
+# for extracting token value from js scripts
+import js2py
+import base64
+from string import ascii_lowercase, digits
+
+# # for logging in
+# from hashlib import md5
+
+# for callbacks and discord embeds
 from threading import Thread
 import asyncio
 from discord import Embed
@@ -22,29 +28,72 @@ __all__ = (
 
 
 class Aternos:
+    _TOKEN_SCRIPT_REGEX = re.compile(r'\(\(\) => {(window\[.+])=(window\[.+])\?(.+):(.+);}\)\(\);')
+    _URL = 'https://aternos.org/servers/'
+
     def __init__(self, session_id) -> None:
         self._cookies = {
             "ATERNOS_SESSION": session_id
         }
 
         self._headers = requests.utils.default_headers()
-        self._headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36"
-        })
+        self._headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36"
 
     def __getitem__(self, item):
         if item == 0:
             return self.servers
         return self.servers[item - 1]
 
+    @staticmethod
+    # two length 16 base 36 strings separated by ":"
+    def _generate_sec() -> str:
+        # generate randomized length n base 36 string
+        def random_string(n):
+            full = ''.join(random.choice(ascii_lowercase + digits) for _ in range(n))
+
+            # convert random amount of characters from last index into 0, mimic aternos generation
+            i = random.randint(3, 6)
+            partial = full[:-i] + ''.join('0' for _ in range(i))
+            return partial
+
+        key, value = random_string(16), random_string(16)
+        return key + ':' + value
+
+    _token = None
+    @property
+    def token(self):
+        if not self._token:  # use old token if it is generated before
+            # create new token, if exception (js2py doesn't support with es6 syntax), do recursion until no error
+            try:
+                js_script = self.html.select('script[type="text/javascript"]')[0].get_text()  # get the "encoded" js
+                actual_token = self._TOKEN_SCRIPT_REGEX.match(js_script)[4]  # regex the token js script
+
+                # defining atob for js2py
+                def atob(s):
+                    return base64.b64decode(str(s)).decode('utf-8')  # decode base64, and convert to string
+
+                context = js2py.EvalJs({'atob': atob})  # adding atob to js2py
+                self._token = context.eval(actual_token)  # evaluate js
+            except js2py.PyJsException:  # if js is in es6, do the whole thing again
+                return self.token
+        return self._token
+
+    @property
+    def _params(self) -> dict:
+        params = {
+            "SEC": self._generate_sec(),
+            "TOKEN": self.token
+        }
+        return params
+
     _last_read: float = 0  # time in seconds
     _html = None
     @property
     def html(self):
         if not self._html or time.time() - self._last_read > 1:  # reusing recently generated html
-            ret = requests.get(url='https://aternos.org/servers/', headers=self._headers, cookies=self._cookies, timeout=10)
-            self._last_read = time.time()
+            ret = requests.get(url=self._URL, headers=self._headers, cookies=self._cookies, timeout=10)
             self._html = BeautifulSoup(ret.content, 'lxml')
+            self._last_read = time.time()
         return self._html
 
     _servers = None
@@ -64,59 +113,19 @@ class Aternos:
         return embed
 
 
-class Server:
-    TOKEN_SCRIPT_REGEX = re.compile(r'\(\(\) => {(window\[.+])=(window\[.+])\?(.+):(.+);}\)\(\);')
-    IP_REGEX = re.compile(r'\w+\.\w+\.\w+')
+class Server(Aternos):
+    _IP_REGEX = re.compile(r'\w+\.\w+\.\w+')
+    _URL = 'https://aternos.org/server/'
 
     def __init__(self, session_id, server_id) -> None:
-        self._cookies = {
-            "ATERNOS_SESSION": session_id,
-            "ATERNOS_SERVER": server_id
-        }
+        super().__init__(session_id)
+        self._cookies["ATERNOS_SERVER"] = server_id
 
-        self._headers = requests.utils.default_headers()
-        self._headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36"
-        })
+    def __str__(self):
+        return re.match(r'\w+', self.ip)[0]
 
-    @staticmethod
-    # two length 16 base 36 strings separated by ":"
-    def _generate_sec() -> str:
-        # generate randomized length n base 36 string
-        def random_string(n):
-            return ''.join(random.choice(ascii_lowercase + digits) for _ in range(n))
-
-        key, value = random_string(16), random_string(16)
-        return key + ':' + value
-
-    _last_read = 0
-    _html = None
-    @property
-    def html(self):
-        if time.time() - self._last_read > 1:  # reusing recently generated html (if the last html is generated
-            ret = requests.get(url='https://aternos.org/server/', headers=self._headers, cookies=self._cookies, timeout=10)
-            self._html = BeautifulSoup(ret.content, 'lxml')
-            self._last_read = time.time()
-        return self._html
-
-    _token = None
-    @property
-    def token(self):
-        if not self._token:  # use old token if it is generated before
-            # create new token, if exception (js2py doesn't support with es6 syntax), do recursion until no error
-            try:
-                js_script = self.html.select('script[type="text/javascript"]')[1].get_text()  # get the "encoded" js
-                actual_token = self.TOKEN_SCRIPT_REGEX.match(js_script)[3]  # regex the token js script
-
-                # defining atob for js2py
-                def atob(s):
-                    return base64.b64decode(str(s)).decode('utf-8')  # decode base64, and convert to string
-
-                context = js2py.EvalJs({'atob': atob})  # adding atob to js2py
-                self._token = context.eval(actual_token)  # evaluate js
-            except js2py.PyJsException:  # if js is in es6, do the whole thing again
-                return self.token
-        return self._token
+    def __repr__(self):
+        return self.ip
 
     @property
     def status(self):
@@ -143,11 +152,12 @@ class Server:
                 return Saving()
             case 'Waiting in queue':
                 est = html.find('span', class_='queue-time').get_text(strip=True)
-                return WaitingInQueue(est)
+                duration = re.search(r'\d+', est)[0]
+                return WaitingInQueue(int(duration))
 
     @property
     def ip(self):
-        ip = self.html.find('div', class_='server-ip').find(string=self.IP_REGEX).get_text(strip=True)
+        ip = self.html.find('div', class_='server-ip').find(string=self._IP_REGEX).get_text(strip=True)
         return ip
 
     @property
@@ -165,13 +175,24 @@ class Server:
         version = self.html.find('span', id='version').get_text(strip=True)
         return version
 
+    _token = None
     @property
-    def _params(self) -> dict:
-        params = {
-            "SEC": self._generate_sec(),
-            "TOKEN": self.token
-        }
-        return params
+    def token(self):
+        if not self._token:  # use old token if it is generated before
+            # create new token, if exception (js2py doesn't support with es6 syntax), do recursion until no error
+            try:
+                js_script = self.html.select('script[type="text/javascript"]')[1].get_text()  # get the "encoded" js
+                actual_token = self._TOKEN_SCRIPT_REGEX.match(js_script)[4]  # regex the token js script
+
+                # defining atob for js2py
+                def atob(s):
+                    return base64.b64decode(str(s)).decode('utf-8')  # decode base64, and convert to string
+
+                context = js2py.EvalJs({'atob': atob})  # adding atob to js2py
+                self._token = context.eval(actual_token)  # evaluate js
+            except js2py.PyJsException:  # if js is in es6, do the whole thing again
+                return self.token
+        return self._token
 
     def start(self, callback=None):
         # Check the status to exit early if it's status is not offline
@@ -197,7 +218,6 @@ class Server:
         match ret.json():
             case {'success': True}:
                 Thread(target=self.confirm_thread).start()  # auto confirmation
-
                 if callback:
                     # callback type handling
                     if asyncio.iscoroutinefunction(callback):
@@ -295,18 +315,19 @@ class Server:
 
     def confirm_thread(self):
         while True:
-            time.sleep(4)
+            time.sleep(random.randint(5, 15))
 
             match self.status:
                 case Offline() | Online() | Loading():
                     return
-                case WaitingInQueue():
+                case WaitingInQueue() as status:
+                    if status.duration > 1:
+                        time.sleep((status.duration-1) * 60)
                     self.confirm()
 
     def when_online(self, callback):
+        # explicit wait 2 sec for aternos to process the start
         while True:
-            time.sleep(4)
-
             # callback with server Status when server is
             # - online, indicating successful startup
             # - offline / crashed, indicating something went wrong
@@ -314,6 +335,7 @@ class Server:
                 case Online() | Offline():
                     callback(self.status)
                     return
+            time.sleep(10)
 
     # asynchronous version of when_online
     @tasks.loop(count=1)
