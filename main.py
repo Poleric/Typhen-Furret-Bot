@@ -60,8 +60,10 @@ async def on_ready():
 
 
 @bot.event
-async def on_command_error(ctx, exc):
+async def on_command_error(ctx, exc, force=False):
     """Quietly handles unknown commands"""
+    if not force and ctx.cog and ctx.cog.qualified_name == 'Aternos':
+        return
 
     match exc:
         case CommandNotFound() | MissingRequiredArgument():

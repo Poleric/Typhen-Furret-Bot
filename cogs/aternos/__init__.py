@@ -8,7 +8,7 @@ from discord import Embed
 from discord.ext import commands
 
 
-class Minecraft(commands.Cog):
+class Aternos(commands.Cog):
     def __init__(self, bot, session_id):
         self.bot = bot
         self._aternos = Servers(session_id)
@@ -34,6 +34,20 @@ class Minecraft(commands.Cog):
 
         embed.add_field(name='Software', value=f'{server.software} {server.version}')
         return embed
+
+    async def cog_command_error(self, ctx, exc):
+        if isinstance(exc, commands.CommandInvokeError):
+            exc = exc.original
+        match exc:
+            case LogInError():
+                await ctx.reply('Not logged in')
+            case AccessDenied():
+                await ctx.reply('Does not have access')
+            case PageError():
+                logging.error(f'Page error: {exc}')
+                await ctx.reply('Something went wrong')
+            case _:
+                await self.bot.on_command_error(ctx, exc, force=True)
 
     @commands.group(aliases=['minecraft', 'mc'])
     async def aternos(self, ctx):
@@ -151,19 +165,12 @@ class Minecraft(commands.Cog):
         embed = Embed(title=server.ip, description=players)
         await ctx.reply(embed=embed)
 
-    @aternos.error
-    async def aternos_error(self, ctx, exc):
-        match exc:
-            case LogInError():
-                await ctx.reply('Not logged in')
-            case AccessDenied():
-                await ctx.reply('Does not have access')
-            case PageError():
-                logging.error(f'Page error: {exc}')
-                await ctx.reply('Something went wrong')
+    @aternos.command()
+    async def test(self, ctx):
+        print(self.has_error_handler())
 
 
 def setup(bot):
     # hardcoded session id TODO: make config file
     session_id = ''
-    bot.add_cog(Minecraft(bot, session_id))
+    bot.add_cog(Aternos(bot, session_id))
