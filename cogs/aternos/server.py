@@ -28,7 +28,6 @@ __all__ = (
 
 class Aternos:
     _TOKEN_SCRIPT_REGEX = re.compile(r'\(\(\) => {(window\[.+])=(window\[.+])\?(.+):(.+);}\)\(\);')
-    _URL = 'https://aternos.org/servers/'
 
     def __init__(self, session_id):
         self._cookies = {
@@ -59,7 +58,7 @@ class Aternos:
         if not self._token:  # use old token if it is generated before
             # create new token, if exception (js2py doesn't support with es6 syntax), do recursion until no error
             try:
-                js_script = self.html.select('script[type="text/javascript"]')[0].get_text()  # get the "encoded" js
+                js_script = self.html('servers').select('script[type="text/javascript"]')[0].get_text()  # get the "encoded" js
                 actual_token = self._TOKEN_SCRIPT_REGEX.match(js_script)[4]  # regex the token js script
 
                 # defining atob for js2py
@@ -80,15 +79,15 @@ class Aternos:
         }
         return params
 
-    _last_read: float = 0  # time in seconds
-    _html = None
-    @property
-    def html(self):
-        if not self._html or time.time() - self._last_read > 1:  # reusing recently generated html
-            ret = requests.get(url=self._URL, headers=self._headers, cookies=self._cookies, timeout=10)
-            self._html = BeautifulSoup(ret.content, 'lxml')
-            self._last_read = time.time()
-        return self._html
+    _cached_soup: dict[dict] = {}
+    def html(self, options):
+        if options not in self._cached_soup or self._cached_soup[options]['last_read'] > 1:  # reusing cached html
+            ret = requests.get(url=f'https://aternos.org/{options}', headers=self._headers, cookies=self._cookies, timeout=10)
+            self._cached_soup[options] = {
+                'soup': BeautifulSoup(ret.content, 'lxml'),
+                'last_read': time.time()
+            }
+        return self._cached_soup[options]['soup']
 
 
 class Servers(Aternos):
@@ -105,7 +104,7 @@ class Servers(Aternos):
     @property
     def servers(self):
         if time.time() - self._last_read > 14400:  # reusing old servers list if its 4 hours ago
-            server_ids = self.html.find_all('div', class_='server-id')
+            server_ids = self.html('servers').find_all('div', class_='server-id')
             session_id = self._cookies['ATERNOS_SESSION']
             self._servers = [Server(session_id, server_id.get_text(strip=True).strip('#')) for server_id in server_ids]
         return self._servers
@@ -114,7 +113,6 @@ class Servers(Aternos):
 
 class Server(Aternos):
     _IP_REGEX = re.compile(r'\w+\.\w+\.\w+')
-    _URL = 'https://aternos.org/server/'
 
     def __init__(self, session_id, server_id):
         super().__init__(session_id)
@@ -128,7 +126,7 @@ class Server(Aternos):
 
     @property
     def status(self):
-        html = self.html  # keep html instance for use later (checking estimated time if status is in queue)
+        html = self.html('server')  # keep html instance for use later (checking estimated time if status is in queue)
         status = html.find('span', class_='statuslabel-label').get_text(strip=True)
         match status:
             case 'Online':
@@ -156,42 +154,30 @@ class Server(Aternos):
 
     @property
     def ip(self):
-        ip = self.html.find('div', class_='server-ip').find(string=self._IP_REGEX).get_text(strip=True)
+        ip = self.html('server').find('div', class_='server-ip').find(string=self._IP_REGEX).get_text(strip=True)
         return ip
 
     @property
-    def players(self):
-        players = self.html.find('span', id='players').get_text(strip=True)
-        return players
+    def player_count(self):
+        player_count = self.html('server').find('span', id='players').get_text(strip=True)
+        return player_count
 
     @property
     def software(self):
-        software = self.html.find('span', id='software').get_text(strip=True)
+        software = self.html('server').find('span', id='software').get_text(strip=True)
         return software
 
     @property
     def version(self):
-        version = self.html.find('span', id='version').get_text(strip=True)
+        version = self.html('server').find('span', id='version').get_text(strip=True)
         return version
 
-    _token = None
     @property
-    def token(self):
-        if not self._token:  # use old token if it is generated before
-            # create new token, if exception (js2py doesn't support with es6 syntax), do recursion until no error
-            try:
-                js_script = self.html.select('script[type="text/javascript"]')[1].get_text()  # get the "encoded" js
-                actual_token = self._TOKEN_SCRIPT_REGEX.match(js_script)[4]  # regex the token js script
-
-                # defining atob for js2py
-                def atob(s):
-                    return base64.b64decode(str(s)).decode('utf-8')  # decode base64, and convert to string
-
-                context = js2py.EvalJs({'atob': atob})  # adding atob to js2py
-                self._token = context.eval(actual_token)  # evaluate js
-            except js2py.PyJsException:  # if js is in es6, do the whole thing again
-                return self.token
-        return self._token
+    def players(self):
+        for player in self.html('players').find_all('div', class_='players'):
+            username = player.find('div', class_='playername').get_text(strip=True)
+            status = player.find('div', class_='player-label').get_text(strip=True)
+            yield Player(username, status)
 
     def start(self, callback=None):
         # Check the status to exit early if it's status is not offline
