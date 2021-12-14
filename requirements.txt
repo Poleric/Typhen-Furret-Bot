@@ -11,7 +11,7 @@ discord.py @ git+https://github.com/Rapptz/discord.py.git@45d498c1b76deaf3b394d1
 humanfriendly==10.0
 idna==3.2
 Js2Py==0.71
-lxml==4.6.4
+lxml==4.6.5
 multidict==5.1.0
 mutagen==1.45.1
 numpy==1.21.2
