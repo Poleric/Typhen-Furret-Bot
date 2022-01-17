@@ -1,208 +1,160 @@
-# Modules
+from typing import Optional, Union  # discordpy dont support pipe as union
+
+# asyncio.sleep for nuke commands
 import asyncio
-from typing import Optional, Union
 
-# Classes
-from datetime import datetime, timedelta
-from discord import Member, VoiceChannel, Role, TextChannel
-from discord.ext import commands, tasks
-from discord.ext.commands import Context, MissingPermissions
-
-# Methods
+# for bonk command
+from datetime import timedelta
 from humanfriendly import format_timespan
-from discord.ext.commands import has_permissions
+from cogs.admin.bonk import Bonked
+
+from discord import TextChannel, VoiceChannel, Member, Role
+from discord.ext import commands
+from discord.ext.commands import has_permissions, Greedy
+from discord.ext.commands import MissingPermissions
 
 
-class Silenced:
+def time_format_to_timedelta(time_format) -> timedelta:
+    time = int(time_format[:-1])
+    time_format = time_format.casefold()
 
-    def __init__(self, member: Member, voice_channel: VoiceChannel, reason, start_time=None, duration=timedelta(seconds=30), container=None):
-        self.member = member
-        self.start_time: datetime = start_time or datetime.now()
-        self.end_time = self.start_time + duration
-        self.container = container
-        self.ensureSilenced.start(voice_channel=voice_channel)
-        self.reason = reason
-
-    def __str__(self):
-        return f'{self.member.name}#{self.member.discriminator}'
-
-    @tasks.loop(seconds=0.3)
-    async def ensureSilenced(self, voice_channel: VoiceChannel):
-        if datetime.now() < self.end_time:
-            if self.member.voice is not None and self.member.voice.channel != voice_channel:
-                await self.member.move_to(voice_channel, reason=self.reason)
-        else:
-            if self.container:
-                del self.container[self.container.find(self.member)]
-
-
-class SilencedList:
-
-    def __init__(self, *detained):
-        self.list = list(detained)
-
-    def __iter__(self):
-        return iter(self.list)
-
-    def __getitem__(self, item):
-        return self.list[item]
-
-    def __delitem__(self, key):
-        self.list[key].ensureSilenced.cancel()
-        del self.list[key]
-
-    def find(self, query: Union[Member, str]):
-        """Returns index"""
-
-        if isinstance(query, Member):
-            for i, silenced in enumerate(self):
-                if silenced.member == query:
-                    return i
-        elif isinstance(query, str):
-            for i, silenced in enumerate(self):
-                if str(silenced).startswith(query):
-                    return i
-        return -1
-
-    def add(self, member: Member, start_time: datetime, duration: timedelta, voice_channel: VoiceChannel, reason=None):
-        if (index := self.find(member)) != -1:
-            self[index].end_time += duration
-        else:
-            self.list.append(Silenced(member, voice_channel, reason, start_time, duration, self))
-
-    def remove(self, query: Union[Member, str]):
-        if (index := self.find(query)) != -1:
-            del self[index]
-            return True
-        else:
-            return False
-
-    def clear(self):
-        for index, _ in enumerate(self):
-            del self[index]
-
-
-def convertToLower(string):
-    return string.lower()
-
-
-def convertToTime(abstract_time: convertToLower):
-    if abstract_time.endswith('s'):
-        duration = timedelta(seconds=int(abstract_time[:-1]))
-    elif abstract_time.endswith('m'):
-        duration = timedelta(minutes=int(abstract_time[:-1]))
-    elif abstract_time.endswith('h'):
-        duration = timedelta(hours=int(abstract_time[:-1]))
-    elif abstract_time.endswith('d'):
-        duration = timedelta(days=int(abstract_time[:-1]))
-    elif abstract_time.endswith('w'):
-        duration = timedelta(weeks=int(abstract_time[:-1]))
-    elif abstract_time.endswith('y'):
-        duration = timedelta(days=364*int(abstract_time[:-1]))
+    if time_format.endswith('s'):
+        seconds = time
+    elif time_format.endswith('m'):
+        seconds = time*60
+    elif time_format.endswith('h'):
+        seconds = time*3600
+    elif time_format.endswith('d'):
+        seconds = time*86400
+    elif time_format.endswith('w'):
+        seconds = time*604800
+    elif time_format.endswith('M'):
+        seconds = time*2592000
+    elif time_format.endswith('y'):
+        seconds = time*31536000
+    elif time_format.endswith('D'):
+        seconds = time*315360000
+    elif time_format.endswith('c'):
+        seconds = time*3153600000
     else:
-        raise ValueError
-    return duration
+        raise ValueError(f'Unsupported time format "{time_format[-1]}"')
+
+    if seconds > timedelta.max.total_seconds():
+        return timedelta.max
+    return timedelta(seconds=seconds)
 
 
-def checkMentionEveryone(mention):
-    if mention in ('@everyone', '@here'):
-        return None
-    else:
-        raise Exception
+class Admin(commands.Cog):
 
+    __slots__ = ('bot', 'bonked')
 
-class Administration(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.bonked = {}
 
-    def __init__(self, client):
-        self.bot = client
-        self.silenced = SilencedList()
-        self.whitelist = list()
-
-    def cog_unload(self):
-        for silenced in self.silenced:
-            silenced.ensureSilenced.cancel()
-
-    @commands.command(aliases=['silence', 'jail'])
+    @commands.command()
     @has_permissions(administrator=True)
-    async def bonk(self, ctx: Context, mentions: commands.Greedy[Union[Member, Role, checkMentionEveryone]], channel: Optional[VoiceChannel] = None, duration: Optional[convertToTime] = timedelta(seconds=30), *reason):
-        """Lock mentioned member in the guild's inactive channel
+    async def nuke(self, ctx, channel: Optional[Union[TextChannel, VoiceChannel]] = None, countdown: int = 30):
+        """Starts a nuke countdown in a channel for specified amount of time"""
+        if channel is None:  # defaults to ctx.channel if channel is not specified
+            channel = ctx.channel
 
-        Default 30 seconds. Accepted affixes:
+        message = await channel.send(f'**NUKING CHANNEL IN {countdown} SECONDS**')
+        for _ in range(countdown):
+            await asyncio.sleep(1)
+            countdown -= 1
+            if countdown != 0:
+                await message.edit(content=f'**NUKING CHANNEL IN {countdown} SECONDS**')
+
+        # await channel.delete(reason='Nuked')
+
+    @commands.group()
+    @has_permissions(administrator=True)
+    async def bonk(self, ctx, mentions: Greedy[Union[Member, Role]], channel: Optional[VoiceChannel] = None, duration: Optional[time_format_to_timedelta] = timedelta(seconds=30), *, reason=''):
+        """Lock mentioned members / roles in the server's inactive channel
+
+        Default to 30 seconds. Time formats are (case sensitive):
         s - seconds
         m - minutes
         h - hours
         d - days
         w - weeks
-        y - years (365 years)
-        """
+        M - months (30 days)
+        y - years (365 days)
+        D - decades (10 years / 3650 days)
+        c - centuries (100 years / 36500 days)  prob not good using centuries cuz idk by the time unbonked already dead
 
-        if not channel:
+        max value is 999999999 days, 23 hours, 59 minutes, 59 seconds, and 999999 microseconds. Any higher will be defaulted to this value.
+        """
+        if ctx.invoked_subcommand:
+            return
+
+        if not channel:  # defaulting to guild's inactive channel if not specified
             if ctx.guild.afk_channel:
                 channel = ctx.guild.afk_channel
             else:
-                await ctx.reply('No channel to send to.')
+                await ctx.reply('No channel to send to')
                 return
-        now = datetime.now()
-        if ctx.message.mention_everyone:
-            for member in ctx.channel.members:
-                if member in self.whitelist:
-                    pass
-                else:
-                    self.silenced.add(member, now, duration, channel, ' '.join(reason))
-            await ctx.reply(f'***NUKE BONK!!!*** @everyone is bonked to {channel.mention}, for {format_timespan(duration.total_seconds())}')
-        else:
-            if mentions:
-                for mention in mentions:
-                    if isinstance(mention, Role):
-                        for member in mention.members:
-                            self.silenced.add(member, now, duration, channel, ' '.join(reason))
+
+        def silence(member):
+            if member.id in self.bonked:
+                self.bonked[member.id].add_time(duration)
+            else:
+                self.bonked[member.id] = Bonked(member, channel, duration, reason=reason)
+
+        added = []
+        for mention in mentions:
+            match mention:
+                case Member() as member:
+                    if member.id == self.bot.user.id:  # for the lols
+                        if len(mentions) == 1:
+                            await ctx.reply('No, I don\'t think I will.')
+                            return
                     else:
-                        self.silenced.add(mention, now, duration, channel, ' '.join(reason))
-                await ctx.reply(f'***BONK!!!*** Go to {channel.mention}, {", ".join(x.mention for x in mentions)} for {format_timespan(duration.total_seconds())}.')
+                        silence(member)
+                        added.append(member)
+                case Role():
+                    for member in mention.members:
+                        silence(member)
+                        added.append(member)
+
+        await ctx.reply(f'***BONK!!!*** Go to {channel.mention} {", ".join(x.mention for x in added)} for {format_timespan(duration.total_seconds())}')
+
+    @bonk.command(name='list', aliases=['ls'])
+    async def _list(self, ctx):
+        if not self.bonked:
+            await ctx.reply('No one was being naughty')
+            return
+        await ctx.reply('Bonked list:\n' '\n'.join(f'{v.member} - <t:{v.end_time.timestamp()}:R>' for v in self.bonked.values()))
+
+    @commands.command(aliases=['release'])
+    async def unbonk(self, ctx, mentions: Greedy[Member]):
+        released = []
+        for member in mentions:
+            if member.id in self.bonked:
+                self.bonked[member.id].unbonk()
+                released.append(member)
+
+        if released:
+            await ctx.reply(f'{", ".join(x.mention for x in released)} is released.')
+        else:
+            await ctx.reply(f'{", ".join(x.mention for x in mentions)} is not bonked.')
 
     @bonk.error
-    async def bonk_error(self, ctx, error):
-        error = error.original
-        if isinstance(error, MissingPermissions):
-            await ctx.reply('**You have no power here**')
+    async def bonk_error(self, ctx, exc):
+        match exc:
+            case MissingPermissions():
+                await ctx.reply('**You have no power here**')
+            case _:
+                raise exc
 
-    @commands.command(aliases=['free', 'release'])
-    async def unbonk(self, ctx: Context, mentions: commands.Greedy[Member]):
-        """Release mentioned member from the guild's inactive channel"""
-
-        if ctx.message.mention_everyone:
-            self.silenced.clear()
-            await ctx.reply('Everyone is released.')
-        else:
-            if mentions:
-                released = []
-                for member in mentions:
-                    if self.silenced.remove(member):
-                        released.append(member)
-                if released:
-                    await ctx.reply(f'{", ".join(x.mention for x in released)} is released.')
-                else:
-                    await ctx.reply(f'{", ".join(x.mention for x in mentions)} is not bonked.')
-
-    # @commands.command()
-    # async def purge(self, ctx: Context, mention: Optional[Member] = None, limit: Optional[int] = 5):
-    #     def is_user(m):
-    #         return m.author == mention if mention else True
-    #
-    #     await ctx.message.delete()
-    #     await ctx.channel.purge(limit=limit, check=is_user)
-
-    @commands.command()
-    @has_permissions(administrator=True)
-    async def nuke(self, ctx: Context, channel: Optional[Union[TextChannel, VoiceChannel]] = None, countdown: Optional[int] = 30):
-        if not channel:
-            channel = ctx.channel
-        message = await channel.send(f'**NUKING CHANNEL IN {countdown} SECONDS**')
-        for _ in range(countdown):
-            await asyncio.sleep(1)
-            countdown -= 1
-            await message.edit(content=f'**NUKING CHANNEL IN {countdown} SECONDS**')
+    @bonk.before_invoke
+    @unbonk.before_invoke
+    async def auto_clear(self, _ctx):
+        for k, v in list(self.bonked.items()):
+            if not v.bonked:
+                del self.bonked[k]
 
 
-def setup(client):
-    client.add_cog(Administration(client))
+def setup(bot):
+    bot.add_cog(Admin(bot))

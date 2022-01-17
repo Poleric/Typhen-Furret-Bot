@@ -6,7 +6,7 @@ import json
 import random
 import typing
 from collections import defaultdict
-from cogs.admin import Silenced
+from cogs.admin import Bonked
 
 
 class Fun(commands.Cog):
@@ -45,7 +45,7 @@ class Fun(commands.Cog):
 
         if not msg.author.bot:  # check if message didn't invoke a command
             if re.match(r'(sorry |forgive me )?(father|furret).+(i have sinned)', msg.content.casefold()) and msg.author.voice:
-                Silenced(msg.author, msg.guild.afk_channel, 'Sinner')
+                Bonked(msg.author, msg.guild.afk_channel, reason='Sinner')
                 await msg.reply(random.choice(['Very well.', 'Thy sins shalt not be forgiven.']))
                 self._sin_counter[str(msg.author.id)] += 1
                 self._commit()
