@@ -395,26 +395,11 @@ class Music(commands.Cog):
 
         await ctx.reply(f'Default website changed to `{self.default_extractor()}`')
 
-    # @commands.group()
-    # async def playlist(self, ctx):
-    #     pass
-    #
-    # @playlist.command()
-    # async def list(self, ctx):
-    #     playlists: list[SavedPlaylist] = []
-    #     with open(r'./config/music.json', 'r') as f:
-    #         for playlist in json.load(f)['saved_playlist']:
-    #             playlists.append(SavedPlaylist(**playlist))
-    #
-    #     embed = Embed(title='Saved Playlists')
-    #     for playlist in playlists:
-    #         msgs = (f"`{i}.` {song['name']}\n" for i, song in zip(range(2), playlist.songs))
-    #         embed.add_field(name=f'{playlist.name} | {playlist.owner_name} | `{len(playlist)}` songs',
-    #                         value=f'{"".join(msgs)}',
-    #                         inline=False)
-
     @join.before_invoke
     @play.before_invoke
+    @youtube.before_invoke
+    @soundcloud.before_invoke
+    @bandcamp.before_invoke
     @search.before_invoke
     async def create_queue(self, ctx):
         if ctx.guild.id not in self.queues:
