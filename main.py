@@ -1,12 +1,11 @@
-import os
+import configparser
 import traceback
-import json
-import time
 import logging
-import socket
-from discord import Intents, AllowedMentions, CustomActivity, Status, Game
-from discord.ext.commands import is_owner, Bot, when_mentioned_or, has_permissions
-from discord.ext.commands.errors import ExtensionNotLoaded, ExtensionFailed, ExtensionAlreadyLoaded, CommandNotFound, MissingRequiredArgument
+import os
+
+from discord import Intents, Status, Game, AllowedMentions
+from discord.ext.commands import Bot, when_mentioned_or, is_owner, has_permissions
+from discord.ext.commands import ExtensionNotLoaded, ExtensionAlreadyLoaded, ExtensionFailed, CommandNotFound, MissingRequiredArgument
 
 
 logging.basicConfig(
@@ -15,42 +14,40 @@ logging.basicConfig(
     datefmt='%H:%M:%S'
 )
 
+config_file = 'bot.ini'
+config = configparser.ConfigParser()
+config.read(config_file)
 
-with open('bot.json', 'r') as data:
-    bot_config = json.load(data)
+token = config.get('Bot', 'token')
+prefix = config.get('Bot', 'prefix').strip('"')
+cog_path = config.get('Cogs', 'cog_path')
 
-
-def commit_config():
-    with open('bot.json', 'w') as config:
-        json.dump(bot_config, config)
-
-
-# sleep until have network connection
-# for startup scripts
-while not socket.create_connection(("1.1.1.1", 53)):  # while cant establish connection
-    time.sleep(1)
-
-bot = Bot(command_prefix=when_mentioned_or(bot_config['prefix']),
+bot = Bot(command_prefix=when_mentioned_or(prefix),
           intents=Intents.all(),
           status=Status.online,
-          activity=Game(f'Pokémon | {bot_config["prefix"]}help'),
+          activity=Game(f'Pokémon | {prefix}help'),
           allowed_mentions=AllowedMentions(replied_user=False))
 
 
-def _load(extension):
-    bot.load_extension(f'cogs.{extension}')
+def commit_config():
+    with open(config_file, 'w') as f:
+        config.write(f)
 
 
-def _unload(extension):
-    bot.unload_extension(f'cogs.{extension}')
+def load(ext):
+    bot.load_extension(f'.{ext}', package=os.path.basename(cog_path))
 
 
-def _reload(extension):
+def unload(ext):
+    bot.unload_extension(f'.{ext}', package=os.path.basename(cog_path))
+
+
+def reload(ext):
     try:
-        _unload(extension)
+        unload(ext)
     except ExtensionNotLoaded:
         pass
-    _load(extension)
+    load(ext)
 
 
 @bot.event
@@ -75,75 +72,62 @@ async def on_command_error(ctx, exc, force=False):
             )
 
 
-@bot.command()
+@bot.command(name='load')
 @is_owner()
-async def clear_console(_):
-    """Clear console"""
-
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-
-@bot.command()
-@is_owner()
-async def load(ctx, extension):
+async def _load(ctx, extension):
     """Load local extension(s)"""
-
     try:
-        _load(extension)
+        load(extension)
         await ctx.reply(f'Loaded {extension}.py')
     except ExtensionAlreadyLoaded:
         await ctx.reply(f'{extension}.py is already loaded')
 
 
-@bot.command()
+@bot.command(name='unload')
 @is_owner()
-async def unload(ctx, extension):
+async def _unload(ctx, extension):
     """Unload local extension(s)"""
-
     try:
-        _unload(extension)
+        unload(extension)
         await ctx.reply(f'Unloaded {extension}.py')
     except ExtensionNotLoaded:
         await ctx.reply(f'{extension}.py is not loaded')
 
 
-@bot.command()
+@bot.command(name='reload')
 @is_owner()
-async def reload(ctx, extension):
+async def _reload(ctx, extension):
     """Reload local extension(s)"""
-
-    _reload(extension)
+    reload(extension)
     await ctx.reply(f'Reloaded {extension}.py')
         
 
 @bot.command()
 async def ping(ctx):
     """Ping the bot"""
-
     await ctx.reply(f'Pong! {round(bot.latency * 1000)}ms')
 
 
 @bot.command()
 @has_permissions(manage_roles=True)
 async def prefix(ctx, prefix):
-    bot.command_prefix = prefix
-    bot_config['prefix'] = prefix
+    """Changes the bot prefix"""
+    bot.command_prefix = prefix  # update bot prefix
+
+    # update config
+    config['Bot']['prefix'] = f"'{prefix}'"
     commit_config()
-    await bot.change_presence(activity=CustomActivity(name=f'Pokémon | {prefix}help'))
+
+    await bot.change_presence(activity=Game(name=f'Pokémon | {prefix}help'))
     await ctx.reply(f'Prefix changed to `{bot.command_prefix}`')
 
 
 # Initialise all local cogs on start
-for folder in os.listdir('./cogs'):
+for folder in os.listdir(cog_path):
     try:
-        if os.path.isdir(f'./cogs/{folder}'):
-            _load(folder)
+        if os.path.isdir(f'{cog_path}/{folder}'):
+            load(folder)
     except ExtensionFailed:
         logging.exception('')
-
-
-# Read token
-with open('token', 'r') as f:
-    token = f.read()
 
 bot.run(token)
