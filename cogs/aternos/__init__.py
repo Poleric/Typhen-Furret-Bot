@@ -1,4 +1,5 @@
 import logging
+import configparser
 
 from cogs.aternos.server import Servers, Server
 from cogs.aternos.classes import Online, Offline, Crashed, WaitingInQueue
@@ -165,12 +166,11 @@ class Aternos(commands.Cog):
         embed = Embed(title=server.ip, description=players)
         await ctx.reply(embed=embed)
 
-    @aternos.command()
-    async def test(self, ctx):
-        print(self.has_error_handler())
-
 
 def setup(bot):
-    # hardcoded session id TODO: make config file
-    session_id = ''
+    config_file = './cogs/aternos/aternos.ini'
+    config = configparser.ConfigParser()
+    config.read(config_file)
+
+    session_id = config.get('Login', 'session_id')
     bot.add_cog(Aternos(bot, session_id))
