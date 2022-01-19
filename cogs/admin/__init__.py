@@ -65,7 +65,8 @@ class Admin(commands.Cog):
             countdown -= 1
             if countdown != 0:
                 await message.edit(content=f'**NUKING CHANNEL IN {countdown} SECONDS**')
-
+            else:
+                await message.reply('*happy furret noises*')
         # await channel.delete(reason='Nuked')
 
     @commands.group()
