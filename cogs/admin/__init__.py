@@ -105,19 +105,20 @@ class Admin(commands.Cog):
 
         added = []
         for mention in mentions:
-            match mention:
-                case Member() as member:
-                    if member.id == self.bot.user.id:  # for the lols
-                        if len(mentions) == 1:
-                            await ctx.reply('No, I don\'t think I will.')
-                            return
-                    else:
-                        silence(member)
-                        added.append(member)
-                case Role():
-                    for member in mention.members:
-                        silence(member)
-                        added.append(member)
+            if mention not in added:  # prevent duplicate cases, ie mentions are [@member, @role] where @member have @role getting time added twice
+                match mention:
+                    case Member() as member:
+                        if member.id == self.bot.user.id:  # for the lols
+                            if len(mentions) == 1:
+                                await ctx.reply('No, I don\'t think I will.')
+                                return
+                        else:
+                            silence(member)
+                            added.append(member)
+                    case Role():
+                        for member in mention.members:
+                            silence(member)
+                            added.append(member)
 
         await ctx.reply(f'***BONK!!!*** Go to {channel.mention} {", ".join(x.mention for x in added)} for {format_timespan(duration.total_seconds())}')
 
