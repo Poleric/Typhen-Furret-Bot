@@ -125,8 +125,10 @@ async def prefix(ctx, prefix):
 # Initialise all local cogs on start
 for folder in os.listdir(cog_path):
     try:
-        if os.path.isdir(f'{cog_path}/{folder}'):
+        if os.path.isdir(f'{cog_path}/{folder}') and folder != '__pycache__':
             load(folder)
+        elif folder.endswith('.py'):
+            load(folder[:-3])
     except ExtensionFailed:
         logging.exception('')
 
