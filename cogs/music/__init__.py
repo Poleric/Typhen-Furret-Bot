@@ -24,10 +24,12 @@ class Music(commands.Cog):
         self.queues: dict[int, Queue] = {}
         self.default_extractor = self.config['default_extractor']
 
-    def get_default_extractor(self):
+    @property
+    def default_extractor(self):
         return self._extractor
 
-    def set_default_extractor(self, extractor_name: str):
+    @default_extractor.setter
+    def default_extractor(self, extractor_name: str):
         match extractor_name.casefold():
             case 'yt' | 'youtube':
                 self._extractor = YouTube
@@ -36,26 +38,22 @@ class Music(commands.Cog):
             case 'bd' | 'bandcamp':
                 self._extractor = Bandcamp
 
-    default_extractor = property(get_default_extractor, set_default_extractor)
-
-    def read_config(self) -> dict:
+    @property
+    def config(self) -> dict:
         with open(self.CONFIG_PATH, 'r') as f:
             config = json.load(f)
         return config
 
-    def commit_config(self, settings: dict):
-        config = self.read_config()
+    @config.setter
+    def config(self, settings: dict):
+        config = self.config
         config.update(settings)
         with open(self.CONFIG_PATH, 'w') as f:
             json.dump(config, f, indent=4)
 
-    config = property(read_config, commit_config)
-
     @commands.command(aliases=['summon'])
     async def join(self, ctx, channel: VoiceChannel = None):
         """Join a voice channel. Default to your current voice channel if not specified"""
-        current_queue = self.queues[ctx.guild.id]
-
         # if channel is not specified, takes author's channel
         if not channel:
             if ctx.author.voice.channel:
@@ -64,17 +62,31 @@ class Music(commands.Cog):
                 await ctx.reply('You\'re not in a voice channel')
                 return
 
-        # if voice_client == None (first time init) OR voice_client not connected (kicked out or disconnected)
-        if not ctx.voice_client or not ctx.voice_client.is_connected():
-            current_queue.voice_client = await channel.connect()
-        # is connected, check if the member's channel is different from the current channel
-        elif channel != ctx.voice_client.channel:
+        # check if connected to vc
+        if not ctx.voice_client or not ctx.voice_client.is_connected():  # is not connected to a vc
+            await channel.connect()
+        # is connected to vc
+        elif channel != ctx.voice_client.channel:  # check if the channel is different
             await ctx.voice_client.move_to(channel)
+
+    async def auto_join(self, ctx):
+        if not ctx.voice_client or not ctx.voice_client.is_connected():
+            await ctx.invoke(self.join)
+
+    def get_queue(self, ctx):
+        """Get queue related to the current server. Create a new one if it doesn't exist"""
+        if ctx.guild.id not in self.queues:
+            self.queues[ctx.guild.id] = Queue(ctx.voice_client)
+        else:
+            self.queues[ctx.guild.id].voice_client = ctx.voice_client
+        return self.queues[ctx.guild.id]
 
     @commands.command(aliases=['p'])
     async def play(self, ctx, *, query: str, extractor: BaseExtractor = None):
         """Add the specific song from url or query"""
-        current_queue = self.queues[ctx.guild.id]
+        await self.auto_join(ctx)
+        current_queue = self.get_queue(ctx)
+
         if not extractor:
             if YouTube.REGEX.match(query):
                 extractor = YouTube()
@@ -85,8 +97,6 @@ class Music(commands.Cog):
             else:
                 extractor = self.default_extractor()  # default
 
-        if not ctx.voice_client or not ctx.voice_client.is_connected():
-            await ctx.invoke(self.join)
         async with ctx.typing():
             try:
                 result = await extractor.process_query(query, requester=ctx.author)
@@ -225,7 +235,7 @@ class Music(commands.Cog):
             await ctx.reply('Furret is not playing anything')
             return
 
-        current_queue = self.queues[ctx.guild.id]
+        current_queue = self.get_queue(ctx)
 
         msg = await ctx.reply(embed=current_queue.embed(page))
         max_page = current_queue.max_page
@@ -255,10 +265,14 @@ class Music(commands.Cog):
     @commands.command(aliases=['s'])
     async def skip(self, ctx):
         """Skip the current playing song"""
-        current_queue = self.queues[ctx.guild.id]
+        current_queue = self.get_queue(ctx)
 
-        song = current_queue.skip()
-        await ctx.reply(f'Skipped `{song}`')
+        song = current_queue.playing
+        if song:
+            current_queue.skip()
+            await ctx.reply(f'Skipped `{song}`')
+        else:
+            await ctx.reply('Not playing anything')
 
     @commands.command()
     async def pause(self, ctx):
@@ -280,7 +294,7 @@ class Music(commands.Cog):
     async def shuffle(self, ctx):
         """Shuffle the queue"""
 
-        current_queue = self.queues[ctx.guild.id]
+        current_queue = self.get_queue(ctx)
 
         current_queue.shuffle()
         await ctx.reply('Queue shuffled')
@@ -288,7 +302,7 @@ class Music(commands.Cog):
     @commands.command()
     async def volume(self, ctx, volume: int = None):
         """Change player volume, 1 - 100"""
-        current_queue = self.queues[ctx.guild.id]
+        current_queue = self.get_queue(ctx)
 
         if volume is None:
             await ctx.reply(f'Volume is at `{current_queue.volume}%`')
@@ -299,7 +313,7 @@ class Music(commands.Cog):
     @commands.command()
     async def np(self, ctx):
         """Show the playing song information and progress"""
-        current_playing = self.queues[ctx.guild.id].playing
+        current_playing = self.get_queue(ctx).playing
         player = ctx.voice_client._player
 
         embed = Embed(title='Now Playing', description=f'[{current_playing.title}]({current_playing.webpage_url})')
@@ -312,7 +326,7 @@ class Music(commands.Cog):
     @commands.command()
     async def move(self, ctx, song_position: int, ending_position: int):
         """Move song from one position to another"""
-        current_queue = self.queues[ctx.guild.id]
+        current_queue = self.get_queue(ctx)
 
         moved_song = current_queue[song_position]
         current_queue.move(song_position, ending_position)
@@ -321,18 +335,28 @@ class Music(commands.Cog):
     @commands.command()
     async def remove(self, ctx, position: int):
         """Remove the song on a specified position"""
-        current_queue = self.queues[ctx.guild.id]
+        current_queue = self.get_queue(ctx)
         try:
-            removed = current_queue.pop(position-1)
+            removed = current_queue.pop(position - 1)
         except IndexError:
             await ctx.reply(f'No song found in position `{position}`')
             return
         await ctx.reply(f'Removed `{removed.title}`')
 
+    @commands.command(aliases=['pop'])
+    async def undo(self, ctx):
+        """Removes the last song. Skips song if the last song is playing."""
+        current_queue = self.get_queue(ctx)
+
+        if len(current_queue):  # if theres song in queue
+            await ctx.invoke(self.remove, position=len(current_queue))
+        else:  # skip
+            await ctx.invoke(self.skip)
+
     @commands.command()
     async def clear(self, ctx):
         """Clear queue. Doesn't affect current playing song"""
-        current_queue = self.queues[ctx.guild.id]
+        current_queue = self.get_queue(ctx)
 
         current_queue.clear()
         await ctx.reply("Queue cleared")
@@ -340,7 +364,7 @@ class Music(commands.Cog):
     @commands.command(aliases=['disconnect', 'dc'])
     async def stop(self, ctx):
         """Disconnect and clear queue"""
-        current_queue = self.queues[ctx.guild.id]
+        current_queue = self.get_queue(ctx)
 
         current_queue.stop()
         await ctx.voice_client.disconnect()
@@ -349,7 +373,7 @@ class Music(commands.Cog):
     @commands.command()
     async def loop(self, ctx, mode=None):
         """Show or change between loop modes"""
-        current_queue = self.queues[ctx.guild.id]
+        current_queue = self.get_queue(ctx)
 
         if not mode:
             match self.loop:
@@ -394,16 +418,6 @@ class Music(commands.Cog):
         }
 
         await ctx.reply(f'Default website changed to `{self.default_extractor()}`')
-
-    @join.before_invoke
-    @play.before_invoke
-    @youtube.before_invoke
-    @soundcloud.before_invoke
-    @bandcamp.before_invoke
-    @search.before_invoke
-    async def create_queue(self, ctx):
-        if ctx.guild.id not in self.queues:
-            self.queues[ctx.guild.id] = Queue()
 
 
 def setup(bot):
