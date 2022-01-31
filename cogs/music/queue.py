@@ -2,9 +2,10 @@ from cogs.music.base_source import BaseSong, timestamp
 
 from enum import Enum, auto
 from collections import deque
-from datetime import timedelta, datetime
+from datetime import timedelta
 import math
 import random
+import logging
 
 from discord import Embed, PCMVolumeTransformer, FFmpegPCMAudio
 
@@ -27,8 +28,8 @@ class Queue:
         'options': '-vn'
     }
 
-    def __init__(self):
-        self.voice_client = None
+    def __init__(self, voice_client):
+        self.voice_client = voice_client
 
         self._songs: deque[BaseSong] = deque()
         self.playing = None
@@ -47,24 +48,24 @@ class Queue:
     def max_page(self):
         return math.ceil(len(self._songs) / 10) or 1
 
-    def get_volume(self) -> int:
+    @property
+    def volume(self) -> int:
         return self._volume
 
-    def set_volume(self, volume: int):
+    @volume.setter
+    def volume(self, volume: int):
         self._volume = volume
         if self.voice_client.source:
             self.voice_client.source.volume = volume / 100
 
-    volume = property(get_volume, set_volume)
-
-    def get_loop(self) -> LoopType:
+    @property
+    def loop(self) -> LoopType:
         return self._loop
 
-    def set_loop(self, mode):
+    @loop.setter
+    def loop(self, mode):
         if isinstance(mode, LoopType):
             self._loop = mode
-
-    loop = property(get_loop, set_loop)
 
     def __len__(self):
         return len(self._songs)
@@ -124,21 +125,23 @@ class Queue:
 
     def play(self) -> None:
         """Start or resume playing from the queue"""
-        if self.voice_client is None:  # Check if theres a voice client in the first place
-            raise self.NotConnectedToVoice('No VoiceClient found')
+        if self.voice_client is None or not self.voice_client.is_connected():  # Check if theres a voice client in the first place
+            raise self.NotConnectedToVoice()
+
+        def make_audio_source():
+            source = FFmpegPCMAudio(source=self.playing.source_url, **Queue.ffmpeg_options)
+            if not source.read():
+                source = make_audio_source()
+            return source
 
         if not self.playing:
             self.playing = self._songs.popleft()
-            next_source = FFmpegPCMAudio(source=self.playing.source_url, **Queue.ffmpeg_options)
-            while not next_source.read():
-                self.playing.refresh_source()
-                next_source = FFmpegPCMAudio(source=self.playing.source_url, **Queue.ffmpeg_options)
-            self.voice_client.play(PCMVolumeTransformer(original=next_source, volume=self._volume / 100),
+            self.voice_client.play(PCMVolumeTransformer(original=make_audio_source(), volume=self._volume / 100),
                                    after=self.play_next)
 
     def play_next(self, error):
         if error:
-            print(f'[{datetime.now()}] [PLAYER ERROR]: {error=}\n')
+            logging.error(f'PLAYER ERROR: {error}')
 
         match self.loop:
             case LoopType.LOOP_QUEUE:
@@ -150,9 +153,8 @@ class Queue:
             self.play()
 
     def skip(self):
-        """Skip and return current playing song"""
+        """Skip and current playing song"""
         self.voice_client.stop()
-        return self.playing
 
     def stop(self):
         """Stop playing and cleanup"""
@@ -190,9 +192,9 @@ class Queue:
                 break
         match self.loop:
             case LoopType.LOOP_QUEUE:
-                loop = 'Looping queue'
+                loop = 'Looping: queue'
             case LoopType.LOOP_SONG:
-                loop = 'Looping song'
+                loop = 'Looping: song'
             case _:
                 loop = 'No loop'
         embed.set_footer(text=f'Page {page}/{self.max_page} | {loop} | Duration: {timestamp(self.duration)}')
