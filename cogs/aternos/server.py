@@ -59,7 +59,7 @@ class Aternos:
             # create new token, if exception (js2py doesn't support with es6 syntax), do recursion until no error
             try:
                 js_script = self.html('servers').select('script[type="text/javascript"]')[0].get_text()  # get the "encoded" js
-                actual_token = self._TOKEN_SCRIPT_REGEX.match(js_script)[4]  # regex the token js script
+                actual_token = self._TOKEN_SCRIPT_REGEX.match(js_script)[3]  # regex the token js script
 
                 # defining atob for js2py
                 def atob(s):
