@@ -201,32 +201,35 @@ class Music(commands.Cog):
             async for song in yt.search(query, results=number_of_results):
                 results.append(song)
 
-        if results:
-            # results embed
-            embed = Embed(color=0x818555)
-            for i, song in enumerate(results, start=1):
-                embed.add_field(name='\u200b',
-                                value=f'`{i}.` [{song.title}]({song.webpage_url}) | `{timestamp(song.duration)}`',
-                                inline=False)
-            embed.add_field(name='\u200b', value='**Reply `cancel` to cancel search.**', inline=False)
+        if not results:  # reply no results message when results list is empty
+            await ctx.reply('No results')
+            return
 
-            msg = await ctx.reply(embed=embed)
+        # results embed
+        embed = Embed(color=0x818555)
+        for i, song in enumerate(results, start=1):
+            embed.add_field(name='\u200b',
+                            value=f'`{i}.` [{song.title}]({song.webpage_url}) | `{song.timestamp}`',
+                            inline=False)
+        embed.add_field(name='\u200b', value='**Reply `cancel` to cancel search.**', inline=False)
 
-            # check if the message is by the one who searched and is choosing or cancelling the search
-            def check(message):
-                return message.author == ctx.author and (message.content in map(str, range(1, len(results)+1)) or message.content == 'cancel')
+        msg = await ctx.reply(embed=embed)
 
-            try:
-                # wait for response
-                response = await self.bot.wait_for('message', check=check, timeout=30)
-            except asyncio.TimeoutError:  # timeout
-                await msg.edit(content='Timeout', embed=None)
-            else:
-                if response.content in map(str, range(1, len(results)+1)):  # a number
-                    await msg.delete()
-                    await ctx.invoke(self.youtube, query=results[int(response.content) - 1].webpage_url)
-                else:  # response is to cancel
-                    await msg.delete()
+        # check if the message is by the one who searched and is choosing or cancelling the search
+        def check(message):
+            return message.author == ctx.author and (message.content in map(str, range(1, len(results)+1)) or message.content == 'cancel')
+
+        try:
+            # wait for response
+            response = await self.bot.wait_for('message', check=check, timeout=30)
+        except asyncio.TimeoutError:  # timeout
+            await msg.edit(content='Timeout', embed=None)
+        else:
+            if response.content in map(str, range(1, len(results)+1)):  # a number
+                await msg.delete()
+                await ctx.invoke(self.youtube, query=results[int(response.content) - 1].webpage_url)
+            else:  # response is to cancel
+                await msg.delete()
 
     @commands.command(aliases=['q'])
     async def queue(self, ctx, page: int = 1):
