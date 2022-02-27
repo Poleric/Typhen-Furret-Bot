@@ -128,15 +128,16 @@ class Queue:
         if self.voice_client is None or not self.voice_client.is_connected():  # Check if theres a voice client in the first place
             raise self.NotConnectedToVoice()
 
-        def make_audio_source():
-            source = FFmpegPCMAudio(source=self.playing.source_url, **Queue.ffmpeg_options)
-            if not source.read():
-                source = make_audio_source()
+        def make_audio_source(song):
+            source = FFmpegPCMAudio(source=song.source_url, **Queue.ffmpeg_options)
+            if not source.read():  # ensure the source url is readable, for example when ffmpeg gets 403 error, it will refresh the source url and read from that again
+                song.refresh_source()
+                source = make_audio_source(song)
             return source
 
         if not self.playing:
             self.playing = self._songs.popleft()
-            self.voice_client.play(PCMVolumeTransformer(original=make_audio_source(), volume=self._volume / 100),
+            self.voice_client.play(PCMVolumeTransformer(original=make_audio_source(self.playing), volume=self._volume / 100),
                                    after=self.play_next)
 
     def play_next(self, error):
