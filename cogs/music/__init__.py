@@ -313,13 +313,14 @@ class Music(commands.Cog):
     @commands.command()
     async def np(self, ctx):
         """Show the playing song information and progress"""
+        """Very hacky workaround to count time passed, don't expect to work when paused during playing"""
         current_playing = self.get_queue(ctx).playing
-        player = ctx.voice_client._player
 
         embed = Embed(title='Now Playing', description=f'[{current_playing.title}]({current_playing.webpage_url})')
         embed.set_thumbnail(url=current_playing.thumbnail_url)
+        player = ctx.voice_client._player
         embed.add_field(name='\u200b',
-                        value=f'`{timestamp(timedelta(seconds=player.DELAY * player.loops))} / {timestamp(current_playing.duration)}`',
+                        value=f'`{timestamp(timedelta(seconds=player.DELAY * player.loops))} / {current_playing.timestamp}`',
                         inline=False)
         await ctx.reply(embed=embed)
 

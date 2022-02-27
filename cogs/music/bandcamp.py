@@ -31,7 +31,7 @@ class Bandcamp(BaseExtractor):
             embed = Embed(title='Song added', description=f'[{self.title}]({self.webpage_url})', color=Bandcamp.COLOR)
             embed.set_thumbnail(url=self.thumbnail_url)
             embed.add_field(name='Artist', value=self.uploader)
-            embed.add_field(name='Duration', value=timestamp(self.duration))
+            embed.add_field(name='Duration', value=self.timestamp)
             if self.album:
                 embed.add_field(name='From album', value=self.album)
             return embed

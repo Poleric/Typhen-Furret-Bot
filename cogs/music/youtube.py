@@ -16,6 +16,8 @@ class YouTube(BaseExtractor):
 
     @dataclass(slots=True)
     class YouTubeSong(BaseSong):
+        is_live: bool
+
         def __init__(self, **kwargs):
             self.title = kwargs.get('title')
             self.webpage_url = kwargs.get('webpage_url')
@@ -24,14 +26,22 @@ class YouTube(BaseExtractor):
             self.thumbnail_url = kwargs.get('thumbnails')[-1]['url']
             self.duration = timedelta(seconds=kwargs.get('duration'))
             self.requester = kwargs.get('requester', '')
+            self.is_live = kwargs.get('is_live', False)
 
         @property
         def embed(self) -> Embed:
             embed = Embed(title='Song added', description=f'[{self.title}]({self.webpage_url})', color=YouTube.COLOR)
             embed.set_thumbnail(url=self.thumbnail_url)
             embed.add_field(name='Channel', value=self.uploader)
-            embed.add_field(name='Duration', value=timestamp(self.duration))
+            embed.add_field(name='Duration', value=self.timestamp)
             return embed
+
+        @property
+        def timestamp(self) -> str:
+            if self.is_live:
+                return 'LIVE'
+            else:
+                return timestamp(self.duration)
 
     @dataclass(slots=True)
     class YouTubePlaylist(BasePlaylist):
@@ -54,12 +64,25 @@ class YouTube(BaseExtractor):
     @dataclass(slots=True)
     class YouTubeResult(BaseResult):
         uploader: str
+        is_live: bool
 
         def __init__(self, **kwargs):
             self.title = kwargs.get('title')
             self.webpage_url = f'https://youtu.be/{kwargs.get("url")}'
             self.uploader = kwargs.get('uploader')
-            self.duration = timedelta(seconds=kwargs.get('duration'))
+            if kwargs.get('duration'):  # if duration is not null or None, None only pops up if the video is live
+                self.duration = timedelta(seconds=kwargs.get('duration'))
+                self.is_live = False
+            else:
+                self.duration = timedelta(seconds=0)
+                self.is_live = True
+
+        @property
+        def timestamp(self) -> str:
+            if self.is_live:
+                return 'LIVE'
+            else:
+                return timestamp(self.duration)
 
     REGEX = re.compile(r'((?:https?:)?//)?((?:www|m)\.)?(youtube\.com|youtu.be)(/(?:[\w\-]+\?v=|embed/|v/)?)([\w\-]+)(\S+)')  # youtube urls, include embeds, and link copy
     VIDEO_REGEX = re.compile(r'https?://www.youtube.com/watch\?v=[^&\s]+')  # youtube VIDEO url, usually copied from address bar

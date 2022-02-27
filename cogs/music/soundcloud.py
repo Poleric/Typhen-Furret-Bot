@@ -29,7 +29,7 @@ class SoundCloud(BaseExtractor):
             embed = Embed(title='Song added', description=f'[{self.title}]({self.webpage_url})', color=SoundCloud.COLOR)
             embed.set_thumbnail(url=self.thumbnail_url)
             embed.add_field(name='Artist', value=self.uploader)
-            embed.add_field(name='Duration', value=timestamp(self.duration))
+            embed.add_field(name='Duration', value=self.timestamp)
             return embed
 
     @dataclass(slots=True)

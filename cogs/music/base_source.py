@@ -50,7 +50,7 @@ class BaseSong:
     webpage_url: str
     uploader: str
     thumbnail_url: str
-    duration: timedelta
+    duration: timedelta | str
     requester: str
 
     def __str__(self):
@@ -71,6 +71,10 @@ class BaseSong:
         with YoutubeDL(ydl_options) as ydl:
             self.source_url = ydl.extract_info(self.webpage_url, download=False)['url']
 
+    @property
+    def timestamp(self) -> str:
+        return self.duration if isinstance(self.duration, str) else timestamp(self.duration)
+
 
 @dataclass(slots=True)
 class BasePlaylist:  # urls container
@@ -89,4 +93,8 @@ class BasePlaylist:  # urls container
 class BaseResult:
     title: str
     webpage_url: str
-    duration: timedelta
+    duration: timedelta | str
+
+    @property
+    def timestamp(self) -> str:
+        return self.duration if isinstance(self.duration, str) else timestamp(self.duration)

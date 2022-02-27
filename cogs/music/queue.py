@@ -170,7 +170,7 @@ class Queue:
         if page == 1:
             if self.playing:  # Check if theres a playing song
                 embed.add_field(name='__Now Playing__',
-                                value=f'[{self.playing.title}]({self.playing.webpage_url}) | `{timestamp(self.playing.duration)}` | `Requested by {self.playing.requester}`',
+                                value=f'[{self.playing.title}]({self.playing.webpage_url}) | `{self.playing.timestamp}` | `Requested by {self.playing.requester}`',
                                 inline=False)
             else:  # No playing song
                 embed.add_field(name='__Now Playing__',
@@ -182,11 +182,11 @@ class Queue:
             try:
                 if i == 0 or i % 10 == 0:  # Check if its the n0th of elements
                     embed.add_field(name='__Enqueued__',
-                                    value=f'`{i+1}.` [{self._songs[i].title}]({self._songs[i].webpage_url}) | `{timestamp(self._songs[i].duration)}` | `Requested by {self._songs[i].requester}`',
+                                    value=f'`{i+1}.` [{self._songs[i].title}]({self._songs[i].webpage_url}) | `{self._songs[i].timestamp}` | `Requested by {self._songs[i].requester}`',
                                     inline=False)
                 else:  # Normal song display field
                     embed.add_field(name='\u200b',
-                                    value=f'`{i+1}.` [{self._songs[i].title}]({self._songs[i].webpage_url}) | `{timestamp(self._songs[i].duration)}` | `Requested by {self._songs[i].requester}`',
+                                    value=f'`{i+1}.` [{self._songs[i].title}]({self._songs[i].webpage_url}) | `{self._songs[i].timestamp}` | `Requested by {self._songs[i].requester}`',
                                     inline=False)
             except IndexError:
                 break
