@@ -17,9 +17,6 @@ class LoopType(Enum):
 
 
 class Queue:
-    class NotConnectedToVoice(Exception):
-        pass
-
     class PageError(Exception):
         pass
 
@@ -126,7 +123,7 @@ class Queue:
     def play(self) -> None:
         """Start or resume playing from the queue"""
         if self.voice_client is None or not self.voice_client.is_connected():  # Check if theres a voice client in the first place
-            raise self.NotConnectedToVoice()
+            return
 
         def make_audio_source(song):
             source = FFmpegPCMAudio(source=song.source_url, **Queue.ffmpeg_options)
@@ -144,23 +141,32 @@ class Queue:
         if error:
             logging.error(f'PLAYER ERROR: {error}')
 
-        match self.loop:
-            case LoopType.LOOP_QUEUE:
-                self._songs.append(self.playing)
-            case LoopType.LOOP_SONG:
-                self._songs.appendleft(self.playing)
-        self.playing = None
+        if self.playing:
+            # Set self.playing as None, adding back self.playing into queue according to the loop mode
+            match self.loop:
+                case LoopType.LOOP_QUEUE:
+                    self._songs.append(self.playing)
+                case LoopType.LOOP_SONG:
+                    self._songs.appendleft(self.playing)
+            self.playing = None
+
         if self._songs:
             self.play()
 
     def skip(self):
         """Skip and current playing song"""
+        # add playing back to the last in the queue if anykind of looping
+        match self.loop:
+            case LoopType.LOOP_QUEUE | LoopType.LOOP_SONG:
+                self._songs.append(self.playing)
+        self.playing = None
+
         self.voice_client.stop()
 
     def stop(self):
         """Stop playing and cleanup"""
-        self.clear()
-        self.skip()
+        self.voice_client.stop()
+        del self
 
     def embed(self, page: int = 1) -> Embed:
         # Error checking
@@ -193,9 +199,9 @@ class Queue:
                 break
         match self.loop:
             case LoopType.LOOP_QUEUE:
-                loop = 'Looping: queue'
+                loop = 'Looping: Queue'
             case LoopType.LOOP_SONG:
-                loop = 'Looping: song'
+                loop = 'Looping: Song'
             case _:
                 loop = 'No loop'
         embed.set_footer(text=f'Page {page}/{self.max_page} | {loop} | Duration: {timestamp(self.duration)}')
