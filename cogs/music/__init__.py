@@ -267,7 +267,10 @@ class Music(commands.Cog):
 
     @commands.command(aliases=['s'])
     async def skip(self, ctx):
-        """Skip the current playing song"""
+        """Skip the current playing song
+
+        Skipping with loop on results in song being added back last in queue.
+        """
         current_queue = self.get_queue(ctx)
 
         song = current_queue.playing
@@ -375,31 +378,28 @@ class Music(commands.Cog):
         del self.queues[ctx.guild.id]
 
     @commands.command()
-    async def loop(self, ctx, mode=None):
-        """Show or change between loop modes"""
+    async def loop(self, ctx, mode='song'):
+        """Show or change between loop modes, defaults to looping song if not specified
+
+        Options:
+            off / clear   - clear looping
+            queue         - loops queue (song get added back to last in queue when finished)
+            song / repeat - loops song
+        """
         current_queue = self.get_queue(ctx)
 
-        if not mode:
-            match self.loop:
-                case LoopType.LOOP_QUEUE:
-                    loop = 'Looping queue'
-                case LoopType.LOOP_SONG:
-                    loop = 'Looping song'
-                case _:
-                    loop = 'No loop'
-            await ctx.reply(f'{loop}\n'
-                            f'`loop <clear|queue|song>` to change loop mode')
-        else:
-            match mode:
-                case ('off' | 'clear'):
-                    current_queue.loop = LoopType.NO_LOOP
-                    await ctx.reply('Not looping')
-                case ('queue' | 'q'):
-                    current_queue.loop = LoopType.LOOP_QUEUE
-                    await ctx.reply('Looping queue')
-                case ('song' | 's'):
-                    current_queue.loop = LoopType.LOOP_SONG
-                    await ctx.reply('Looping song')
+        match mode:
+            case ('off' | 'clear'):
+                current_queue.loop = LoopType.NO_LOOP
+                await ctx.reply('Loop turned off')
+            case ('queue' | 'q'):
+                current_queue.loop = LoopType.LOOP_QUEUE
+                await ctx.reply('Loop queue :white_check_mark:')
+            case ('song' | 's' | 'repeat' | 'r'):
+                current_queue.loop = LoopType.LOOP_SONG
+                await ctx.reply('Loop song :white_check_mark:')
+            case _:
+                await ctx.reply(f'Unknown option, valid options are <off | queue | song>')
 
     @commands.command()
     async def default(self, ctx, website: str = None):
