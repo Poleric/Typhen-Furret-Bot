@@ -132,9 +132,7 @@ class Fun(commands.Cog):
 
         Yoy can optionally specify the amount of time to resend the message, up to 20
         """
-        num = num if num <= 20 else 20
-
-        for _ in range(num):
+        for _ in range(min(20, num)):
             await ctx.send(msg)
 
     @commands.command()

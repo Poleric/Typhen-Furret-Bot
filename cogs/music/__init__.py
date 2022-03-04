@@ -71,7 +71,7 @@ class Music(commands.Cog):
 
     async def auto_join(self, ctx):
         if not ctx.voice_client or not ctx.voice_client.is_connected():
-            await ctx.invoke(self.join)
+            await ctx.invoke(self.join, channel=ctx.author.voice.channel)
 
     def get_queue(self, ctx):
         """Get queue related to the current server. Create a new one if it doesn't exist"""
@@ -193,12 +193,10 @@ class Music(commands.Cog):
     @commands.command()
     async def search(self, ctx, number_of_results: Optional[int] = 10, *, query: str):  # TODO: support searching for other extractors
         """Shows results from YouTube to choose from, max 10 results"""
-        number_of_results = number_of_results if number_of_results <= 10 else 10
-
         async with ctx.typing():
             yt = YouTube()
             results = []
-            async for song in yt.search(query, results=number_of_results):
+            async for song in yt.search(query, results=min(10, number_of_results)):
                 results.append(song)
 
         if not results:  # reply no results message when results list is empty
