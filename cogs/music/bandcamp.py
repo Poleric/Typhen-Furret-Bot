@@ -55,7 +55,7 @@ class Bandcamp(BaseExtractor):
 
     REGEX = re.compile(r'(?:https?://)?[\w-]+\.bandcamp\.com.+')
     TRACK_REGEX = re.compile(r'(?:https?://)?[\w-]+\.bandcamp\.com/track/.+')
-    ALBUM_REGEX = re.compile(r'(?:https?://)?[\w-]+\.bandcamp\.com/album/.+')
+    ALBUM_REGEX = re.compile(r'(?:https?://)?[\w-]+\.bandcamp\.com/(?:album/.+|releases)')
 
     def __str__(self):
         return 'Bandcamp'
