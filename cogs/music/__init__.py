@@ -40,8 +40,13 @@ class Music(commands.Cog):
 
     @property
     def config(self) -> dict:
-        with open(self.CONFIG_PATH, 'r') as f:
-            config = json.load(f)
+        try:
+            with open(self.CONFIG_PATH, 'r') as f:
+                config = json.load(f)
+        except FileNotFoundError:
+            config = {"default_extractor": "YouTube"}
+            with open(self.CONFIG_PATH, "w") as f:
+                json.dump(config, f)
         return config
 
     @config.setter
