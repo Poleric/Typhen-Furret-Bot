@@ -1,8 +1,8 @@
-from cogs.music.base_source import BaseExtractor, BaseSong, BasePlaylist, timestamp
+from cogs.music.objects import Extractor, Song, Playlist, strip_timestamp
 from cogs.music.youtube import YouTube
 from cogs.music.soundcloud import SoundCloud
 from cogs.music.bandcamp import Bandcamp
-from cogs.music.queue import LoopType, Queue
+from cogs.music.queue import LoopType, Queue, NotConnected
 
 import re
 import json
@@ -82,7 +82,7 @@ class Music(commands.Cog):
         return self.queues[ctx.guild.id]
 
     @commands.command(aliases=['p'])
-    async def play(self, ctx, *, query: str, extractor: BaseExtractor = None):
+    async def play(self, ctx, *, query: str, extractor: Extractor = None):
         """Add the specific song from url or query"""
         await self.auto_join(ctx)
         current_queue = self.get_queue(ctx)
@@ -107,7 +107,7 @@ class Music(commands.Cog):
                 await ctx.reply('Failed to retrieve data, please try again later')
                 return
         match result:
-            case BaseSong():
+            case Song():
                 current_queue.add(result)
 
                 # check if queue is empty
@@ -120,45 +120,14 @@ class Music(commands.Cog):
                     embed = result.embed
                     embed.add_field(name='Position in queue', value=str(len(current_queue)))
                     await ctx.reply(embed=embed)
-            case BasePlaylist():
-                # add songs concurrently
-                tasks = [asyncio.create_task(extractor.process_query(url, ctx.author)) for url in result.songs_url]
-
-                # function for adding songs from the tasks AND catching exception
-                async def add_songs():
-                    for i, task in enumerate(tasks):
-                        try:
-                            song = await task
-                            if song:
-                                current_queue.add(song)
-                        except (DownloadError, ExtractorError) as e:
-                            if re.search(r'HTTP Error 429', str(e)):
-                                await ctx.reply('Too many requests, please try again later')
-                                return
-                            await ctx.reply(f'Failed to retrieve data for {result.songs_url[i]}, please try again later')
-                            return
-
-                add_song_task = asyncio.create_task(add_songs())
-
-                first_song = await tasks[0]
+            case Playlist():
+                current_queue.add_playlist(result)
                 # playlist add response
                 embed = result.embed
-                embed.set_thumbnail(url=first_song.thumbnail_url)  # take first song thumbnail
                 await ctx.reply(embed=embed)
 
                 if current_queue.playing is None:  # if adding playlist as first item
-                    # "play" song and immediately pause, giving option to resume
                     current_queue.play()
-                    ctx.voice_client.pause()
-
-                    # for lower end hardware
-                    await ctx.reply('Songs are being added in the background, you can use `resume` command to play but keep in mind it will be crackly at parts due to hardware limitations.\n'
-                                    'Will automatically start playing once finished adding songs.')
-
-                    await add_song_task  # wait till finish adding songs
-                    if ctx.voice_client.is_paused():  # automatically resume playing
-                        ctx.voice_client.resume()
-                        await ctx.send(f'Playing `{first_song}`')
 
     @commands.command(aliases=['yt'])
     async def youtube(self, ctx, *, query: str):
@@ -233,7 +202,7 @@ class Music(commands.Cog):
     async def queue(self, ctx, page: int = 1):
         """Show the queue in embed form with pages"""
         if not ctx.voice_client:
-            await ctx.reply('Furret is not playing anything')
+            await ctx.reply('Not playing anything')
             return
 
         current_queue = self.get_queue(ctx)
@@ -282,25 +251,21 @@ class Music(commands.Cog):
     async def pause(self, ctx):
         """Pause the current playing song"""
 
-        if not ctx.voice_client.is_paused():
-            ctx.voice_client.pause()
+        self.get_queue(ctx).pause()
         await ctx.reply('Player paused')
 
     @commands.command()
     async def resume(self, ctx):
         """Resume the current paused song"""
 
-        if ctx.voice_client.is_paused():
-            ctx.voice_client.resume()
-            await ctx.reply('Player resumed')
+        self.get_queue(ctx).resume()
+        await ctx.reply('Player resumed')
 
     @commands.command()
     async def shuffle(self, ctx):
         """Shuffle the queue"""
 
-        current_queue = self.get_queue(ctx)
-
-        current_queue.shuffle()
+        self.get_queue(ctx).shuffle()
         await ctx.reply('Queue shuffled')
 
     @commands.command()
@@ -311,20 +276,19 @@ class Music(commands.Cog):
         if volume is None:
             await ctx.reply(f'Volume is at `{current_queue.volume}%`')
             return
+
         current_queue.volume = volume
         await ctx.reply(f'Volume changed to `{volume}%`')
 
     @commands.command()
     async def np(self, ctx):
         """Show the playing song information and progress"""
-        """Very hacky workaround to count time passed, don't expect to work when paused during playing"""
-        current_playing = self.get_queue(ctx).playing
+        current_queue = self.get_queue(ctx)
 
-        embed = Embed(title='Now Playing', description=f'[{current_playing.title}]({current_playing.webpage_url})')
-        embed.set_thumbnail(url=current_playing.thumbnail_url)
-        player = ctx.voice_client._player
+        embed = Embed(title='Now Playing', description=f'[{current_queue.playing.title}]({current_queue.playing.webpage_url})')
+        embed.set_thumbnail(url=current_queue.playing.thumbnail_url)
         embed.add_field(name='\u200b',
-                        value=f'`{timestamp(timedelta(seconds=player.DELAY * player.loops))} / {current_playing.timestamp}`',
+                        value=f'`{strip_timestamp(timedelta(seconds=current_queue.timer.get_elapsed()))} / {current_queue.playing.timestamp}`',
                         inline=False)
         await ctx.reply(embed=embed)
 
@@ -361,17 +325,15 @@ class Music(commands.Cog):
     @commands.command()
     async def clear(self, ctx):
         """Clear queue. Doesn't affect current playing song"""
-        current_queue = self.get_queue(ctx)
 
-        current_queue.clear()
+        self.get_queue(ctx).clear()
         await ctx.reply("Queue cleared")
 
     @commands.command(aliases=['disconnect', 'dc'])
     async def stop(self, ctx):
         """Disconnect and clear queue"""
-        current_queue = self.get_queue(ctx)
 
-        current_queue.stop()
+        ctx.voice_client.stop()
         await ctx.voice_client.disconnect()
         del self.queues[ctx.guild.id]
 
@@ -397,7 +359,7 @@ class Music(commands.Cog):
                 current_queue.loop = LoopType.LOOP_SONG
                 await ctx.reply('Loop song :white_check_mark:')
             case _:
-                await ctx.reply(f'Unknown option, valid options are <off | queue | song>')
+                await ctx.reply(f'Valid options are `off`, `queue`, `song`')
 
     @commands.command()
     async def default(self, ctx, website: str = None):
@@ -422,5 +384,5 @@ class Music(commands.Cog):
         await ctx.reply(f'Default website changed to `{self.default_extractor()}`')
 
 
-def setup(bot):
-    bot.add_cog(Music(bot))
+async def setup(bot):
+    await bot.add_cog(Music(bot))
