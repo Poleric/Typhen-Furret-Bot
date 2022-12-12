@@ -75,6 +75,10 @@ class Music(commands.Cog):
             await ctx.voice_client.move_to(channel)
 
     async def auto_join(self, ctx):
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            await ctx.reply("You\'re not in a voice channel")
+            raise NotConnected
+
         if not ctx.voice_client or not ctx.voice_client.is_connected():
             await ctx.invoke(self.join, channel=ctx.author.voice.channel)
 
@@ -302,8 +306,8 @@ class Music(commands.Cog):
         """Move song from one position to another"""
         current_queue = self.get_queue(ctx)
 
-        moved_song = current_queue[song_position]
-        current_queue.move(song_position, ending_position)
+        moved_song = current_queue[song_position-1]
+        current_queue.move(song_position-1, ending_position-1)
         await ctx.reply(f'Moved `{moved_song}` to position `{ending_position}`')
 
     @commands.command()
