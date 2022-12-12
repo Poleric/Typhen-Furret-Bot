@@ -5,7 +5,6 @@ import asyncio
 
 # for bonk command
 from datetime import timedelta
-from humanfriendly import format_timespan
 from cogs.admin.bonk import Bonked
 
 from discord import TextChannel, VoiceChannel, Member, Role
@@ -120,7 +119,7 @@ class Admin(commands.Cog):
                             silence(member)
                             added.append(member)
 
-        await ctx.reply(f'***BONK!!!*** Go to {channel.mention} {", ".join(x.mention for x in added)} for {format_timespan(duration.total_seconds())}')
+        await ctx.reply(f'***BONK!!!*** Go to {channel.mention} {", ".join(x.mention for x in added)} for {duration}')
 
     @bonk.command(name='list', aliases=['ls'])
     async def _list(self, ctx):
@@ -158,5 +157,5 @@ class Admin(commands.Cog):
                 del self.bonked[k]
 
 
-def setup(bot):
-    bot.add_cog(Admin(bot))
+async def setup(bot):
+    await bot.add_cog(Admin(bot))

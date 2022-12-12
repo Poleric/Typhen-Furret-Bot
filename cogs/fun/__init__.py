@@ -13,7 +13,7 @@ class Fun(commands.Cog):
     CONFIG_PATH = r'./cogs/fun/fun.json'
 
     def __init__(self, bot):
-        self._bot = bot
+        self.bot = bot
         with open(self.CONFIG_PATH, 'r') as f:
             config = json.load(f)
             self._reply_rate: int = config['replybot']['reply_rate']
@@ -41,7 +41,7 @@ class Fun(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, msg):
         # grab context from the message
-        ctx = await self._bot.get_context(msg)
+        ctx = await self.bot.get_context(msg)
 
         if not msg.author.bot:  # check if message didn't invoke a command
             if re.match(r'(sorry |forgive me )?(father|furret).+(i have sinned)', msg.content.casefold()) and msg.author.voice:
@@ -256,5 +256,5 @@ class Fun(commands.Cog):
         await ctx.reply(msg)
 
 
-def setup(client):
-    client.add_cog(Fun(client))
+async def setup(bot):
+    await bot.add_cog(Fun(bot))

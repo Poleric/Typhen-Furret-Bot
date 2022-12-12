@@ -22,5 +22,5 @@ class QOTD(commands.Cog):
             await msg.create_thread(name=msg.content if len(msg.content) < 100 else 'QOTD')
 
 
-def setup(bot):
-    bot.add_cog(QOTD(bot))
+async def setup(bot):
+    await bot.add_cog(QOTD(bot))
