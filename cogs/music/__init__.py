@@ -75,12 +75,14 @@ class Music(commands.Cog):
             await ctx.voice_client.move_to(channel)
 
     async def auto_join(self, ctx):
-        if not ctx.author.voice or not ctx.author.voice.channel:
+        if ctx.voice_client and ctx.voice_client.is_connected():
+            return
+
+        if not ctx.author.voice:
             await ctx.reply("You\'re not in a voice channel")
             raise NotConnected
 
-        if not ctx.voice_client or not ctx.voice_client.is_connected():
-            await ctx.invoke(self.join, channel=ctx.author.voice.channel)
+        await ctx.invoke(self.join, channel=ctx.author.voice.channel)
 
     def get_queue(self, ctx):
         """Get queue related to the current server. Create a new one if it doesn't exist"""
