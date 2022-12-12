@@ -1,20 +1,4 @@
-# Discord
-discord.py @ git+https://github.com/Rapptz/discord.py.git@45d498c1b76deaf3b394d17ccf56112fa691d160
-PyNaCl==1.4.0              # voice support
-
-# Widely used
-asyncio==3.4.3             # admin, aternos, and music
-numpy==1.22.1              # game, and mathbot
-
-# Cogs specifics
-# admin
-humanfriendly==10.0
-
-# aternos
-requests==2.26.0
-beautifulsoup4==4.10.0
-lxml==4.6.5
-Js2Py==0.71                # running js scripts
-
-# music
-youtube-dl==2021.6.6
+discord.py[voice]
+asyncio
+numpy
+youtube-dl
