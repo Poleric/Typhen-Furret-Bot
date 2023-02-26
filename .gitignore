@@ -22,4 +22,7 @@ venv.bak/
 *.json
 
 # logs
-*.log
+logs/
+
+# youtube_cookies
+youtube_cookies.txt
