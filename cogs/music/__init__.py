@@ -9,7 +9,7 @@ import json
 import asyncio
 from typing import Optional
 from datetime import timedelta
-from youtube_dl.utils import ExtractorError, DownloadError
+from yt_dlp.utils import ExtractorError, DownloadError
 
 from discord import VoiceChannel, Embed
 from discord.ext import commands

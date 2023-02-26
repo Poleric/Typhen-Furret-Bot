@@ -1,4 +1,4 @@
-from cogs.music.objects import Extractor, Song, Playlist, BaseSource
+from cogs.music.objects import Extractor, Song, Playlist, PartialSource
 
 from dataclasses import dataclass
 import asyncio
@@ -30,7 +30,7 @@ class SoundCloudSong(Song):
 
 
 @dataclass(slots=True)
-class SoundCloudBaseSource(BaseSource):
+class SoundCloudPartialSource(PartialSource):
     def __init__(self, **kwargs):
         self.title = kwargs.get('title')
         self.webpage_url = f'https://youtu.be/{kwargs.get("url")}'
@@ -48,7 +48,7 @@ class SoundCloudPlaylist(Playlist):
     def __init__(self, **kwargs):
         self.title = kwargs.get('title')
         self.webpage_url = kwargs.get('webpage_url')
-        self.sources = tuple(SoundCloudBaseSource(**data) for data in kwargs.get('entries'))
+        self.sources = tuple(SoundCloudPartialSource(**data) for data in kwargs.get('entries'))
 
     @property
     def embed(self) -> Embed:

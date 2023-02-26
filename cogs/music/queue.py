@@ -1,5 +1,6 @@
-from cogs.music.objects import Song, Playlist, BaseSource, strip_timestamp
+from cogs.music.objects import Song, Playlist, PartialSource, strip_timestamp
 from cogs.music.timer import Timer
+from cogs.music.utils import max_retry
 
 from enum import Enum
 from datetime import timedelta
@@ -9,7 +10,10 @@ import logging
 
 from discord import Embed, PCMVolumeTransformer, FFmpegPCMAudio, VoiceClient
 from typing import Iterator
+from yt_dlp.utils import ExtractorError, DownloadError
 
+
+MAX_RETRIES = 3
 
 class NotConnected(Exception):
     pass
@@ -65,7 +69,7 @@ class Queue(list):
         if isinstance(mode, LoopType):
             self._loop = mode
 
-    def __iter__(self) -> Iterator[Song | BaseSource]:
+    def __iter__(self) -> Iterator[Song | PartialSource]:
         return super(Queue, self).__iter__()
 
     def add(self, song: Song) -> None:
@@ -107,14 +111,19 @@ class Queue(list):
         def make_audio_source(song):
             source = FFmpegPCMAudio(source=song.source_url, **Queue.ffmpeg_options)
             if not source.read():  # ensure the source url is readable, for example when ffmpeg gets 403 error, it will refresh the source url and read from that again
-                song.refresh_source()
+                max_retry(song.refresh_source, max_retries=MAX_RETRIES, exceptions=(ExtractorError, DownloadError))
                 source = make_audio_source(song)
             return source
 
         if not self.playing:
             self.playing = self.pop(0)
-            if isinstance(self.playing, BaseSource):
-                self.playing = self.playing.convert_source()
+            if not isinstance(self.playing, Song):  # is partial source
+                try:
+                    self.playing = max_retry(self.playing.convert_source, max_retries=MAX_RETRIES, exceptions=(ExtractorError, DownloadError))
+                except (ExtractorError, DownloadError):
+                    # if it still aint working
+                    logging.exception(f"{self.playing.webpage_url} cant be loaded.")
+                    self.play()  # recurse, skipping to next song.
 
             self.voice_client.play(PCMVolumeTransformer(original=make_audio_source(self.playing), volume=self._volume / 100),
                                    after=self.play_next)

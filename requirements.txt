@@ -1,4 +1,4 @@
 discord.py[voice]
 asyncio
 numpy
-youtube-dl
+yt-dlp

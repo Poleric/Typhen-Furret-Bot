@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import timedelta
-from youtube_dl import YoutubeDL
+from yt_dlp import YoutubeDL
 import re
 
 ydl_options = {
@@ -44,7 +44,7 @@ class Extractor:
 
 
 @dataclass(slots=True)
-class Source:
+class PartialSource:
     """Bare minimum to represent a song"""
 
     title: str
@@ -61,18 +61,13 @@ class Source:
     def timestamp(self) -> str:
         return strip_timestamp(timedelta(seconds=self.duration))
 
-
-@dataclass(slots=True)
-class BaseSource(Source):
-    """Source extracted with minimal data for speed and efficiency, usually large search or playlists"""
-
     def convert_source(self):
         """Calls source conversion function and returns it."""
         raise NotImplemented
 
 
 @dataclass(slots=True)
-class Song(Source):
+class Song(PartialSource):
     """A source with url to stream from, and other information."""
 
     source_url: str
@@ -90,7 +85,7 @@ class Playlist:  # BaseSource container
     title: str
     webpage_url: str
     uploader: str
-    sources: tuple[BaseSource]
+    sources: tuple[PartialSource, ...]
 
     def __str__(self):
         return self.title

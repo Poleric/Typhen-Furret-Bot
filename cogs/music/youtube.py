@@ -1,4 +1,4 @@
-from cogs.music.objects import Extractor, Song, Playlist, BaseSource
+from cogs.music.objects import Extractor, Song, Playlist, PartialSource
 
 from dataclasses import dataclass
 import asyncio
@@ -40,7 +40,7 @@ class YouTubeSong(Song):
 
 
 @dataclass(slots=True)
-class YoutubeBaseSource(BaseSource):
+class YoutubePartialSource(PartialSource):
     is_live: bool
 
     def __init__(self, **kwargs):
@@ -60,7 +60,7 @@ class YoutubeBaseSource(BaseSource):
         if self.is_live:
             return 'LIVE'
         else:
-            return super(YoutubeBaseSource, self).timestamp
+            return super(YoutubePartialSource, self).timestamp
 
     def convert_source(self) -> YouTubeSong:
         data = Extractor().extract_info(self.webpage_url)
@@ -75,7 +75,7 @@ class YouTubePlaylist(Playlist):
         self.title = kwargs.get('title')
         self.webpage_url = kwargs.get('webpage_url')
         self.uploader = kwargs.get('uploader')
-        self.sources = tuple(YoutubeBaseSource(**data) for data in kwargs.get("entries"))
+        self.sources = tuple(YoutubePartialSource(**data) for data in kwargs.get("entries"))
 
     @property
     def embed(self) -> Embed:
@@ -117,7 +117,7 @@ class YouTube(Extractor):
         data = await loop.run_in_executor(None, functools.partial(self.extract_info, query=url, ydl_options=ydl_options))
         return YouTubePlaylist(**data)
 
-    async def search(self, query: str, results=10) -> AsyncIterable[YoutubeBaseSource]:
+    async def search(self, query: str, results=10) -> AsyncIterable[YoutubePartialSource]:
         ydl_options = self.ydl_options.copy()
         ydl_options['extract_flat'] = True
 
@@ -125,7 +125,7 @@ class YouTube(Extractor):
         data = await loop.run_in_executor(None, functools.partial(self.extract_info, query=f'ytsearch{results}:{query}', ydl_options=ydl_options))
 
         for video in data['entries']:
-            yield YoutubeBaseSource(**video)
+            yield YoutubePartialSource(**video)
 
     async def process_query(self, query: str, requester) -> YouTubeSong | YouTubePlaylist:
         if self.PLAYLIST_REGEX.match(query):
