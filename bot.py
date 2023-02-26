@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 import os
 import traceback
 import json
@@ -29,6 +30,7 @@ save_config = lambda: save_json_to(conf, "bot.json")
 DEFAULT_PREFIX = "!"
 DEFAULT_COG_PATH = r"./cogs"
 DEFAULT_ACTIVITY_MESSAGE = "Pokemon | furret help"  # hardcoded lol
+LOG_PATH = "./logs"
 
 
 def get_prefix(bot: Bot, message: Message) -> list[str]:
@@ -42,15 +44,25 @@ bot = Bot(
     activity=Game(name=DEFAULT_ACTIVITY_MESSAGE)
 )
 
-logger = logging.getLogger('discord')
-logger.setLevel(logging.DEBUG)
-logging.getLogger('discord.http').setLevel(logging.INFO)
-
-handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
+#  setup logging
 dt_fmt = '%H:%M:%S'
 formatter = logging.Formatter('[{asctime}] [{levelname:<8}] {name}: {message}', dt_fmt, style='{')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
+
+# file handlers
+if not os.path.isdir(LOG_PATH):
+    os.mkdir(LOG_PATH)
+file_handler = logging.FileHandler(filename=f'{LOG_PATH}/{datetime.now():%Y-%m-%d_%H-%M-%S}.log', encoding='utf-8', mode='w')
+file_handler.setFormatter(formatter)
+
+# stream handlers setup, print to stdout
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+stream_handler.setLevel(logging.INFO)
+
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+logger.addHandler(file_handler)
+logger.addHandler(stream_handler)
 
 
 @bot.event
