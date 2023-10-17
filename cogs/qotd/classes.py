@@ -2,7 +2,6 @@ import dataclasses
 from dataclasses import dataclass, field
 import asyncio
 import time
-import functools
 
 import json
 
