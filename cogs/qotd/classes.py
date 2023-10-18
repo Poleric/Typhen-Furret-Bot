@@ -9,7 +9,7 @@ from typing import IO
 from discord import Message
 from discord.ext.commands import Bot
 
-A_DAY_IN_SECONDS = 10
+A_DAY_IN_SECONDS = 86400
 
 
 @dataclass(slots=True, frozen=True)
