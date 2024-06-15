@@ -1,213 +1,151 @@
-from cogs.music.objects import Song, Playlist, PartialSource, strip_timestamp
-from cogs.music.timer import Timer
-from cogs.music.utils import max_retry
-
-from enum import Enum
-from datetime import timedelta
-import math
 import random
-import logging
+from discord import User
+from abc import ABC, abstractmethod
+from collections import deque
 
-from discord import Embed, PCMVolumeTransformer, FFmpegPCMAudio, VoiceClient
-from typing import Iterator
-from yt_dlp.utils import ExtractorError, DownloadError
+from .extractors import Source, Playlist
+from .loop_mode import LoopMode
 
-
-MAX_RETRIES = 3
-
-class NotConnected(Exception):
-    pass
+from typing import Any
 
 
-class LoopType(Enum):
-    NO_LOOP = 1
-    LOOP_QUEUE = 2
-    LOOP_SONG = 3
+class MusicQueue(ABC):
+    MAX_VOLUME: float = 2.0
+    MAX_SPEED: float = 2.0
 
+    def __init__(
+            self,
+            *args,
+            loop_mode: LoopMode = LoopMode.NO_LOOP,
+            speed: float = 1.0,
+            volume: float = 1.0,
+            **kwargs):
+        super().__init__(*args, **kwargs)
+        self.queue: deque[Source] = deque()
+        self.playing: Source | None = None
 
-class Queue(list):
-    class PageError(Exception):
-        pass
+        self.loop_mode: LoopMode = loop_mode
+        self.speed: float = speed
+        self.volume: float = volume
 
-    ffmpeg_options = {
-        'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-        'options': '-vn'
-    }
-
-    def __init__(self, voice_client):
-        super().__init__()
-        self.voice_client: VoiceClient = voice_client
-        self.playing: Song | None = None
-
-        # Player settings
-        self._volume: int | float = 100
-        self._loop: LoopType = LoopType.NO_LOOP
-        self.timer: Timer = Timer()
+    @staticmethod
+    def add_requester_data[T](source: T, requester: User) -> T:
+        source.requester = requester
+        return source
 
     @property
-    def duration(self) -> int:
-        """Return the total seconds of the total duration of all the songs in the queue"""
-
-        return sum(song.duration for song in self)
-
-    @property
-    def volume(self) -> int | float:
+    def volume(self) -> float:
         return self._volume
 
     @volume.setter
-    def volume(self, volume: int | float):
-        self._volume = volume
-        if self.voice_client.source:
-            self.voice_client.source.volume = volume / 100
+    def volume(self, value: float) -> None:
+        value = max(value, 0.0)
+        value = min(value, self.MAX_VOLUME)
+
+        self._volume = value
+        self.set_volume(value)
+
+    @abstractmethod
+    def set_volume(self, volume: float) -> None:
+        raise NotImplementedError
 
     @property
-    def loop(self) -> LoopType:
-        return self._loop
+    def speed(self) -> float:
+        return self._speed
 
-    @loop.setter
-    def loop(self, mode: LoopType):
-        if isinstance(mode, LoopType):
-            self._loop = mode
+    @speed.setter
+    def speed(self, value: float) -> None:
+        value = max(value, 0.0)
+        value = min(value, self.MAX_SPEED)
 
-    def __iter__(self) -> Iterator[Song | PartialSource]:
-        return super(Queue, self).__iter__()
+        self._speed = value
+        self.set_speed(value)
 
-    def add(self, song: Song) -> None:
-        """Append Song into the queue"""
+    @abstractmethod
+    def set_speed(self, speed: float) -> None:
+        raise NotImplementedError
 
-        self.append(song)
+    @property
+    def total_duration(self) -> int:
+        return sum(song.duration for song in self.queue)
 
-    def add_playlist(self, playlist: Playlist) -> None:
-        """Append playlist sources into the queue"""
+    @abstractmethod
+    def start_playing(self) -> None:
+        raise NotImplementedError
 
-        self.extend(playlist)
+    @abstractmethod
+    def end_playing(self) -> None:
+        raise NotImplementedError
 
-    def add_top(self, song: Song) -> None:
-        """Append left Song into the queue"""
+    def load_next_song(self, *, force=False) -> None:
+        if self.queue:
+            match self.loop_mode:
+                case LoopMode.NO_LOOP:
+                    self.playing = self.queue.popleft()
+                case LoopMode.LOOP_QUEUE:
+                    self.queue.append(self.playing)
+                    self.playing = self.queue.popleft()
+                case LoopMode.LOOP_SONG if force:
+                    self.queue.append(self.playing)
+                    self.playing = self.queue.popleft()
+        else:
+            if self.loop_mode == LoopMode.NO_LOOP or force:
+                self.playing = None
 
-        self.insert(0, song)
+    """Player methods"""
 
-    def move(self, initial_index: int, final_index: int) -> None:
-        """Move song from one pos to another pos"""
+    def add(self, source: Source | Playlist, requester: User) -> None:
+        """Add song"""
+        if isinstance(source, Source):
+            self.add_requester_data(source, requester)
+            self.queue.append(source)
+        elif isinstance(source, Playlist):
+            self.queue.extend(self.add_requester_data(s, requester) for s in source)
 
-        self.insert(final_index, self.pop(initial_index))
+    def add_left(self, source: Source | Playlist, requester: User) -> None:
+        """Add song to the front of the queue"""
+        if isinstance(source, Source):
+            self.add_requester_data(source, requester)
+            self.queue.appendleft(source)
+        elif isinstance(source, Playlist):
+            # extendleft results in a reversed order
+            self.queue.extendleft(self.add_requester_data(s, requester) for s in reversed(source))
+
+    def move(self, x: int, y: int) -> Any:
+        """Moves song from x to y, shifting everything right.
+        Returns the moved song.
+        """
+        self.queue.rotate(-x)
+        tmp = self.queue.popleft()
+        self.queue.rotate(-y + x)
+        self.queue.appendleft(tmp)
+        self.queue.rotate(y)
+
+        return tmp
 
     def shuffle(self) -> None:
-        """Shuffle queue"""
+        """Randomizes all the song in the queue"""
+        random.shuffle(self.queue)
 
-        random.shuffle(self)
+    def clear(self) -> None:
+        """Clear the queue"""
+        self.queue.clear()
 
-    def assert_vc(self) -> None:
-        try:
-            assert self.voice_client  # Check if theres a voice client in the first place
-            assert self.voice_client.is_connected()
-        except AssertionError:
-            raise NotConnected
+    def skip(self) -> None:
+        """Skip current playing song, even if loop is on."""
+        self.load_next_song(force=True)
+        self.start_playing()
 
-    def play(self) -> None:
-        """Start or resume playing from the queue"""
-        self.assert_vc()
+    def remove(self, x: int) -> None:
+        """Removes song at the specified index."""
+        self.queue.remove(x)
 
-        def make_audio_source(song):
-            source = FFmpegPCMAudio(source=song.source_url, **Queue.ffmpeg_options)
-            if not source.read():  # ensure the source url is readable, for example when ffmpeg gets 403 error, it will refresh the source url and read from that again
-                max_retry(song.refresh_source, max_retries=MAX_RETRIES, exceptions=(ExtractorError, DownloadError))
-                source = make_audio_source(song)
-            return source
+    def clear_all(self) -> None:
+        """Clear the playing and the queue"""
+        self.clear()
+        self.skip()
 
-        if not self.playing:
-            self.playing = self.pop(0)
-            if not isinstance(self.playing, Song):  # is partial source
-                try:
-                    self.playing = max_retry(self.playing.convert_source, max_retries=MAX_RETRIES, exceptions=(ExtractorError, DownloadError))
-                except (ExtractorError, DownloadError):
-                    # if it still aint working
-                    logging.exception(f"{self.playing.webpage_url} cant be loaded.")
-                    self.play()  # recurse, skipping to next song.
-
-            self.voice_client.play(PCMVolumeTransformer(original=make_audio_source(self.playing), volume=self._volume / 100),
-                                   after=self.play_next)
-            self.timer.reset()
-
-    def play_next(self, error):
-        if error:
-            logging.error(f'PLAYER ERROR: {error}')
-
-        if self.playing:
-            # Set self.playing as None, adding back self.playing into queue according to the loop mode
-            match self.loop:
-                case LoopType.LOOP_QUEUE:
-                    self.add(self.playing)
-                case LoopType.LOOP_SONG:
-                    self.add_top(self.playing)
-            self.playing = None
-
-        if self:
-            self.play()
-
-    def skip(self):
-        """Skip and current playing song"""
-        # add playing back to the last in the queue if anykind of looping
-        match self.loop:
-            case LoopType.LOOP_QUEUE | LoopType.LOOP_SONG:
-                self.append(self.playing)
-        self.playing = None
-
-        self.voice_client.stop()
-
-    def pause(self):
-        """Pause the playing and timer"""
-        self.assert_vc()
-
-        if not self.voice_client.is_paused():
-            self.voice_client.pause()
-            self.timer.pause()
-
-    def resume(self):
-        """Resume playing"""
-        self.assert_vc()
-
-        if self.voice_client.is_paused():
-            self.voice_client.resume()
-            self.timer.resume()
-
-    @property
-    def max_page(self):
-        return math.ceil(len(self) / 10) or 1
-
-    def embed(self, page: int = 1) -> Embed:
-        # Error checking
-        if page < 1 or page > self.max_page:
-            raise self.PageError('Page does not exist')
-        embed = Embed(title='Queue', color=0x25fa30)
-        # Top part (shows playing song)
-        if page == 1:
-            if self.playing:  # Check if theres a playing song
-                embed.add_field(name='__Now Playing__',
-                                value=f'[{self.playing.title}]({self.playing.webpage_url}) | `{self.playing.timestamp}` | `Requested by {self.playing.requester}`',
-                                inline=False)
-            else:  # No playing song
-                embed.add_field(name='__Now Playing__',
-                                value='Nothing, try requesting a few songs',
-                                inline=False)
-                return embed
-
-        # Bottom part (The queued songs)
-        for i, song in enumerate(self[10*(page-1):10*page], start=1):  # self[0:10] // self[10:20] // self[10(n-1):10n]
-            header = "\u200b"
-            if i == 1:  # Check if its the first element
-                header = "__Enqueued__"  # changes the top title
-
-            embed.add_field(name=header,
-                            value=f"`{10 * (page - 1) + i}.` [{song.title}]({song.webpage_url}) | `{song.timestamp}` | `Requested by {song.requester}`",
-                            inline=False)
-
-        match self.loop:
-            case LoopType.LOOP_QUEUE:
-                loop = 'Looping: Queue'
-            case LoopType.LOOP_SONG:
-                loop = 'Looping: Song'
-            case _:
-                loop = 'No loop'
-        embed.set_footer(text=f'Page {page}/{self.max_page} | {loop} | Duration: {strip_timestamp(timedelta(seconds=self.duration))}')
-        return embed
+    @abstractmethod
+    def seek(self, duration: int) -> None:
+        """Seek to a specific time of the playing song"""
+        raise NotImplementedError
