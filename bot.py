@@ -11,7 +11,7 @@ import traceback
 logger = logging.getLogger("bot")
 
 DEFAULT_PREFIX = "furret "
-DEFAULT_ACTIVITY_MESSAGE = "!help"
+DEFAULT_ACTIVITY_MESSAGE = "Furret | furret help"
 EXTENSIONS_TO_LOAD = (
     "cogs.admin",
     "cogs.fun",
