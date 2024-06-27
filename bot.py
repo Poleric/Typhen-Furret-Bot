@@ -10,7 +10,7 @@ import traceback
 
 logger = logging.getLogger("bot")
 
-DEFAULT_PREFIX = "!"
+DEFAULT_PREFIX = "furret "
 DEFAULT_ACTIVITY_MESSAGE = "!help"
 EXTENSIONS_TO_LOAD = (
     "cogs.admin",
