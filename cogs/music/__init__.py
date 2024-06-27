@@ -1,343 +1,333 @@
-from .extractors import *
-from .extractors.utils import timestamp, strip_seconds
-from .client import MusicClient
-from .loop_mode import LoopMode
-
-import asyncio
-from typing import Optional, cast
-from discord.ext.commands._types import Check
-from yt_dlp.utils import ExtractorError, DownloadError
-
-from discord import VoiceChannel, Embed, Message, Reaction, Member
+from discord import Embed, Reaction, Member, \
+    ClientException
 from discord.ext import commands
-from discord.ext.commands import MissingRequiredArgument, Context, Bot, check
+from discord.ext.commands import Cog, Bot, Context
+from wavelink import Node, Pool, Queue, Player, Playable, Playlist, Search, Filters, \
+    TrackStartEventPayload, NodeReadyEventPayload, \
+    QueueMode, AutoPlayMode, TrackSource
+from .utils import tm
+from .embed import QueueEmbed
+import itertools
+import asyncio
+import os
+
+from typing import cast
+import logging
+
+logger = logging.getLogger("music")
 
 
-DEFAULT_EXTRACTOR = Youtube
-
-
-def is_ctx_connected(ctx: Context) -> bool:
-    client: MusicClient = cast(MusicClient, ctx.voice_client)
-    return client and client.is_connected()
-
-
-class Music(commands.Cog):
+class Music(Cog):
     def __init__(self, bot: Bot):
         self.bot: Bot = bot
 
-    @staticmethod
-    def ignore_on_no_voice_client() -> Check:
-        async def predicate(ctx: Context) -> bool:
-            return is_ctx_connected(ctx)
+    async def cog_load(self) -> None:
+        nodes = [Node(
+            uri="http://localhost:2333",
+            password=os.getenv("LAVALINK_SERVER_PASSWORD")
+        )]
+        await Pool.connect(nodes=nodes, client=self.bot, cache_capacity=100)
 
-        return check(predicate)
+    async def cog_unload(self) -> None:
+        await Pool.close()
 
-    async def implicit_join(self, ctx: Context) -> None:
-        if not is_ctx_connected(ctx):
-            if ctx.author.voice:
-                await ctx.invoke(self.join, channel=ctx.author.voice.channel)
+    @Cog.listener()
+    async def on_wavelink_node_ready(self, payload: NodeReadyEventPayload) -> None:
+        logger.info("Wavelink Node connected: %r | Resumed: %s", payload.node, payload.resumed)
 
-    @commands.command(aliases=['summon'])
-    async def join(self, ctx, channel: VoiceChannel = None):
-        """Join a voice channel. Default to your current voice channel if not specified"""
-        # if channel is not specified, takes author's channel
-        channel = channel or ctx.author.voice.channel
-
-        if channel is None:
-            await ctx.reply("You're not in a voice channel")
+    @Cog.listener()
+    async def on_wavelink_track_start(self, payload: TrackStartEventPayload) -> None:
+        player: Player | None = payload.player
+        if not player:
+            # Handle edge cases...
             return
 
-        if not is_ctx_connected(ctx):
-            await channel.connect(cls=MusicClient)
-            return
+        original: Playable | None = payload.original
+        track: Playable = payload.track
 
-        if channel != ctx.voice_client.channel:
-            await ctx.voice_client.move_to(channel)
+        embed: Embed = Embed(title="Now Playing")
+        embed.description = f"**{track.title}** by `{track.author}`"
+
+        if track.artwork:
+            embed.set_thumbnail(url=track.artwork)
+
+        if original and original.recommended:
+            embed.description += f"\n\n`This track was recommended via {track.source}`"
+
+        if track.album.name:
+            embed.add_field(name="Album", value=track.album.name)
+
+        await player.home.send(embed=embed, silent=True)
 
     @commands.command(aliases=['p'])
-    async def play(self, ctx: Context, *, query: str, extractor: type[Extractor] = None):
-        """Add the specific song from url or query"""
-        if extractor is None:
-            extractor = choose_extractor(query) or DEFAULT_EXTRACTOR
-
-        async with ctx.typing():
-            try:
-                source = await extractor().process_query(query)
-            except (DownloadError, ExtractorError) as e:
-                if 'HTTP Error 429' in str(e):
-                    await ctx.reply('Too many requests, please try again later')
-                    return
-                await ctx.reply('Failed to retrieve data, please try again later')
-                return
-
-        if not is_ctx_connected(ctx) and ctx.author.voice:
-            await ctx.invoke(self.join, channel=ctx.author.voice.channel)
-
-        client: MusicClient = cast(MusicClient, ctx.voice_client)
-        client.add(source, ctx.author)
-        await ctx.reply(embed=source.on_added_embed)
-
-    @commands.command(aliases=['yt'])
-    async def youtube(self, ctx, *, query: str):
-        """Use YouTube to search and play"""
-        await ctx.invoke(self.play, query=query, extractor=Youtube)
-
-    @commands.command(aliases=['sc'])
-    async def soundcloud(self, ctx, *, query: str):
-        """Use SoundCloud to search and play"""
-        await ctx.invoke(self.play, query=query, extractor=Soundcloud)
-
-    @commands.command(aliases=['bd'])
-    async def bandcamp(self, ctx, *, query: str):
-        """Use Bandcamp to play"""
-        await ctx.invoke(self.play, query=query, extractor=Bandcamp)
-
-    @play.error
-    @youtube.error
-    @soundcloud.error
-    @bandcamp.error
-    async def play_error(self, ctx: Context, exception):
-        match exception:
-            case MissingRequiredArgument():
-                await ctx.reply('No query found.\n'
-                                'Supported sites includes:\n'
-                                '- YouTube\n'
-                                '- SoundCloud\n'
-                                '- Bandcamp (urls only)')
-            case _:
-                raise exception
-
-    @commands.command()
-    async def search(self, ctx: Context, number_of_results: Optional[int] = 10, *, query: str):  # TODO: support searching for other extractors
-        """Shows results from YouTube to choose from, max 10 results"""
-        async with ctx.typing():
-            results = [song async for song in Youtube().search(query, number_of_results=min(10, number_of_results))]
-
-        if len(results) == 0:
-            await ctx.reply('No results')
+    async def play(self, ctx: Context, query: str):
+        """Join a voice channel. Default to your current voice channel if not specified"""
+        if not ctx.guild:
             return
 
-        embed = Embed(color=0x818555)
-        for i, song in enumerate(results, start=1):
-            embed.add_field(name='\u200b',
-                            value=f'`{i}.` [{song.title}]({song.webpage_url}) | `{song.timestamp}`',
-                            inline=False)
-        embed.add_field(name='\u200b', value='**Reply `cancel` to cancel search.**', inline=False)
+        player: Player
+        player = cast(Player, ctx.voice_client)  # type: ignore
 
-        msg = await ctx.reply(embed=embed)
-
-        # wait for response
-        def check(message: Message):
-            if message.author != ctx.author:
+        if not player:
+            try:
+                player = await ctx.author.voice.channel.connect(cls=Player)  # type: ignore
+            except AttributeError:
+                await ctx.send("Please join a voice channel first before using this command.")
+                return
+            except ClientException:
+                await ctx.send("I was unable to join this voice channel. Please try again.")
                 return
 
-            if message.content.casefold() == 'cancel':
-                return True
+        # Turn on AutoPlay to enabled mode.
+        # enabled = AutoPlay will play songs for us and fetch recommendations...
+        # partial = AutoPlay will play songs for us, but WILL NOT fetch recommendations...
+        # disabled = AutoPlay will do nothing...
+        player.autoplay = AutoPlayMode.enabled
 
-            try:
-                return int(message.content) in range(1, len(results) + 1)
-            except ValueError:
-                pass
+        # Lock the player to this channel...
+        if not hasattr(player, "home"):
+            player.home = ctx.channel
+        elif player.home != ctx.channel:
+            await ctx.send(
+                f"You can only play songs in {player.home.mention}, as the player has already started there.")
+            return
 
-        try:
-            response = await self.bot.wait_for('message', check=check, timeout=30)
-        except asyncio.TimeoutError:  # timeout
-            await msg.edit(content='Timeout', embed=None)
+        # This will handle fetching Tracks and Playlists...
+        # Seed the doc strings for more information on this method...
+        # If spotify is enabled via LavaSrc, this will automatically fetch Spotify tracks if you pass a URL...
+        # Defaults to YouTube for non URL based queries...
+        tracks: Search = await Playable.search(query, source=TrackSource.YouTube)
+        if not tracks:
+            await ctx.send(f"{ctx.author.mention} - Could not find any tracks with that query. Please try again.")
+            return
+
+        if isinstance(tracks, Playlist):
+            # tracks is a playlist...
+            added: int = await player.queue.put_wait(tracks)
+            await ctx.send(f"Added the playlist **`{tracks.name}`** ({added} songs) to the queue.")
         else:
-            if not response.content.casefold() == 'cancel':
-                await ctx.invoke(self.youtube, query=results[int(response.content) - 1].webpage_url)  # noqa
-            await msg.delete()
+            track: Playable = tracks[0]
+            await player.queue.put_wait(track)
+            await ctx.send(f"Added **`{track}`** to the queue.")
 
-    @commands.command(aliases=['q'])
-    async def queue(self, ctx: Context, page: int = 1):
-        """Show the queue in embed form with pages"""
-        client: MusicClient = cast(MusicClient, ctx.voice_client)
+        if not player.playing:
+            # Play now since we aren't playing anything...
+            await player.play(player.queue.get(), volume=30)
 
-        if not client:
-            await ctx.reply('Not playing anything')
-            return
-
-        msg = await ctx.reply(embed=client.embed(page))
-        max_page = client.max_page
-
-        LEFT = '⬅️'
-        RIGHT = '➡️'
-        if max_page > 1:
-            current_page = page
-            await msg.add_reaction(LEFT)
-            await msg.add_reaction(RIGHT)
-
-            def check(reaction: Reaction, user: Member):
-                return not user.bot and reaction.emoji in (LEFT, RIGHT)
-
-            while True:
-                max_page = client.max_page
-                try:
-                    reaction, user = await self.bot.wait_for('reaction_add', timeout=10, check=check)
-                except asyncio.TimeoutError:
-                    await msg.remove_reaction(LEFT, self.bot.user)
-                    await msg.remove_reaction(RIGHT, self.bot.user)
-                    break
-                else:
-                    await reaction.remove(user)
-                    if reaction.emoji == LEFT and current_page != 1:
-                        current_page -= 1
-                    elif reaction.emoji == RIGHT and current_page != max_page:
-                        current_page += 1
-                    await msg.edit(embed=client.embed(current_page))
-
-    @ignore_on_no_voice_client()
     @commands.command(aliases=['s'])
     async def skip(self, ctx: Context):
-        """Skip the current playing song
+        """Skip the current song"""
+        player: Player = cast(Player, ctx.voice_client)
+        if not player:
+            return
 
-        Skipping with loop on results in song being added back last in queue.
-        """
-        client: MusicClient = cast(MusicClient, ctx.voice_client)
+        await player.skip(force=True)
+        await ctx.message.add_reaction("\u2705")
 
-        song = client.playing
-        if song:
-            client.skip()
-            await ctx.reply(f'Skipped `{song}`')
-        else:
-            await ctx.reply('Not playing anything.')
-
-    @ignore_on_no_voice_client()
     @commands.command()
-    async def pause(self, ctx: Context):
-        """Pause the current playing song"""
-        client: MusicClient = cast(MusicClient, ctx.voice_client)
+    async def speed(self, ctx: Context, speed: int = 100):
+        """Change player volume, in percentages"""
+        player: Player = cast(Player, ctx.voice_client)
+        if not player:
+            return
 
-        client.pause()
-        await ctx.reply('Player paused. :pause_button:')
+        filters: Filters = player.filters
+        filters.timescale.set(pitch=1, speed=speed / 100, rate=1)
+        await player.set_filters(filters)
 
-    @ignore_on_no_voice_client()
+        await ctx.message.add_reaction("\u2705")
+
+    @commands.command(aliases=["resume"])
+    async def pause(self, ctx: Context) -> None:
+        """Pause or resume playing."""
+        player: Player = cast(Player, ctx.voice_client)
+        if not player:
+            return
+
+        await player.pause(not player.paused)
+        await ctx.message.add_reaction("\u2705")
+
     @commands.command()
-    async def resume(self, ctx: Context):
-        """Resume the current paused song"""
-        client: MusicClient = cast(MusicClient, ctx.voice_client)
+    async def volume(self, ctx: Context, volume: int = 100):
+        """Change player volume, 1 - 100"""
+        player: Player = cast(Player, ctx.voice_client)
+        if not player:
+            return
 
-        client.resume()
-        await ctx.reply('Player resumed. :arrow_forward:')
+        await player.set_volume(volume)
+        await ctx.message.add_reaction("\u2705")
 
-    @ignore_on_no_voice_client()
+    @commands.command(aliases=["dc"])
+    async def disconnect(self, ctx: Context):
+        """Disconnect the player"""
+        player: Player = cast(Player, ctx.voice_client)
+        if not player:
+            return
+
+        await player.disconnect()
+        await ctx.message.add_reaction("\u2705")
+
+    @commands.command()
+    async def stop(self, ctx: Context):
+        """Disconnect and clear the player"""
+        player: Player = cast(Player, ctx.voice_client)
+        if not player:
+            return
+
+        await player.disconnect()
+        player.queue.reset()
+        await ctx.message.add_reaction("\u2705")
+
     @commands.command()
     async def shuffle(self, ctx: Context):
         """Shuffle the queue"""
-        client: MusicClient = cast(MusicClient, ctx.voice_client)
-
-        client.shuffle()
-        await ctx.reply('Queue shuffled. :twisted_rightwards_arrows: ')
-
-    @ignore_on_no_voice_client()
-    @commands.command()
-    async def volume(self, ctx: Context, volume: int = None):
-        """Change player volume, 1 - 100"""
-        client: MusicClient = cast(MusicClient, ctx.voice_client)
-
-        if volume is None:
-            await ctx.reply(f'Volume is at `{client.volume}%`')
+        player: Player = cast(Player, ctx.voice_client)
+        if not player:
             return
 
-        client.volume = volume / 100
-        await ctx.reply(f'Volume changed to `{volume}%`')
+        player.queue.shuffle()
+        await ctx.message.add_reaction("\u2705")
 
-    @ignore_on_no_voice_client()
-    @commands.command()
-    async def speed(self, ctx: Context, speed: int = None):
-        """Change player volume, 1 - 100"""
-        client: MusicClient = cast(MusicClient, ctx.voice_client)
-
-        if speed is None:
-            await ctx.reply(f'Speed is at `{client.volume}%`')
+    @commands.command(aliases=["ss"])
+    async def seek(self, ctx: Context, seconds: float):
+        """Seek to a timestamp in the current song"""
+        player: Player = cast(Player, ctx.voice_client)
+        if not player:
             return
 
-        client.speed = speed / 100
-        await ctx.reply(f'Speed changed to `{speed}%`')
+        ms = int(seconds * 1000)
+        await player.seek(ms)
+        await ctx.reply(f'Seeked to `{seconds:.2f}` seconds')
 
-    @ignore_on_no_voice_client()
-    @commands.command()
-    async def seek(self, ctx: Context, seconds: int):
-        """Change player volume, 1 - 100"""
-        client: MusicClient = cast(MusicClient, ctx.voice_client)
-
-        client.seek(seek=seconds)
-        await ctx.reply(f'Seeked to `{seconds}` seconds')
-
-    @ignore_on_no_voice_client()
-    @commands.command(aliases=["np"])
-    async def now_playing(self, ctx: Context):
-        """Show the playing song information and progress"""
-
-        client: MusicClient = cast(MusicClient, ctx.voice_client)
-
-        playing: Source = client.playing
-
-        embed = Embed(title='Now Playing', description=f'[{playing.title}]({playing.webpage_url})')
-        embed.set_thumbnail(url=playing.thumbnail_url)
-        embed.add_field(
-            name='\u200b',
-            value=f'`{timestamp(*strip_seconds(client.elapsed_seconds))} / {playing.timestamp}`',
-            inline=False)
-        await ctx.reply(embed=embed)
-
-    @ignore_on_no_voice_client()
     @commands.command(aliases=["mv"])
     async def move(self, ctx: Context, song_position: int, ending_position: int):
         """Move song from one position to another"""
-        client: MusicClient = cast(MusicClient, ctx.voice_client)
+        player: Player = cast(Player, ctx.voice_client)
+        if not player:
+            return
 
-        moved_song = client.move(song_position-1, ending_position-1)
-        await ctx.reply(f'Moved `{moved_song}` to position `{ending_position}`')
+        try:
+            moved_song = player.queue[song_position - 1]
+            player.queue.delete(song_position - 1)
+        except IndexError:
+            await ctx.reply(f'No song found in position `{song_position}`')
+            return
+        player.queue.put_at(ending_position - 1, moved_song)
+        await ctx.reply(f'Moved `{moved_song.title}` to position `{ending_position}`')
 
-    @ignore_on_no_voice_client()
     @commands.command(aliases=["rm"])
     async def remove(self, ctx: Context, position: int):
         """Remove the song on a specified position"""
-        client: MusicClient = cast(MusicClient, ctx.voice_client)
+        player: Player = cast(Player, ctx.voice_client)
+        if not player:
+            return
 
         try:
-            removed = client.queue[position - 1]
-            client.remove(position - 1)
+            removed = player.queue[position - 1]
+            player.queue.delete(position - 1)
         except IndexError:
             await ctx.reply(f'No song found in position `{position}`')
             return
         await ctx.reply(f'Removed `{removed.title}`')
 
-    @ignore_on_no_voice_client()
     @commands.command(aliases=["cls"])
     async def clear(self, ctx: Context):
         """Clear queue. Doesn't affect current playing song"""
-        client: MusicClient = cast(MusicClient, ctx.voice_client)
+        player: Player = cast(Player, ctx.voice_client)
+        if not player:
+            return
 
-        client.clear()
+        player.queue.clear()
         await ctx.reply("Queue cleared")
 
-    @ignore_on_no_voice_client()
-    @commands.command(aliases=['disconnect', 'dc'])
-    async def stop(self, ctx: Context):
-        """Disconnect and clear queue"""
-        client: MusicClient = cast(MusicClient, ctx.voice_client)
-
-        client.clear_all()
-        await client.disconnect(force=False)
-
-    @ignore_on_no_voice_client()
     @commands.command()
     async def loop(self, ctx: Context):
         """Toggle between loop modes"""
-        client: MusicClient = cast(MusicClient, ctx.voice_client)
+        player: Player = cast(Player, ctx.voice_client)
+        if not player:
+            return
 
-        match client.loop_mode:
-            case LoopMode.NO_LOOP:
-                client.loop_mode = LoopMode.LOOP_QUEUE
+        queue: Queue = player.queue
+        match queue.mode:
+            case QueueMode.normal:
+                queue.mode = QueueMode.loop
                 await ctx.reply("Looping queue. :repeat:")
-            case LoopMode.LOOP_SONG:
-                client.loop_mode = LoopMode.LOOP_SONG
+            case QueueMode.loop:
+                queue.mode = QueueMode.loop_all
                 await ctx.reply("Looping song. :repeat_one:")
-            case LoopMode.LOOP_SONG:
-                client.loop_mode = LoopMode.NO_LOOP
+            case QueueMode.loop_all:
+                queue.mode = QueueMode.loop
                 await ctx.reply("Looping off. :red_circle:")
+
+    @commands.command(aliases=["np"])
+    async def now_playing(self, ctx: Context):
+        """Show the playing song information and progress"""
+        player: Player = cast(Player, ctx.voice_client)
+        if not player:
+            return
+        if not player.playing:
+            await ctx.reply("Not playing.")
+            return
+
+        playing: Playable = player.current
+
+        embed = Embed(title='Now Playing', description=f'[{playing.title}]({playing.uri})')
+        embed.set_thumbnail(url=playing.artwork)
+        embed.add_field(
+            name='\u200b',
+            value=f'`{tm.from_millis(player.position)} / {tm.from_millis(playing.length)}`',
+            inline=False)
+        await ctx.reply(embed=embed)
+
+    @commands.command(aliases=['q'])
+    async def queue(self, ctx: Context, page: int = 1):
+        """Show the queue in embed form with pages"""
+        player: Player = cast(Player, ctx.voice_client)
+        if not player:
+            await ctx.reply('Not playing anything')
+            return
+
+        queue_embed = QueueEmbed(player.queue)
+        LEFT = '⬅️'
+        RIGHT = '➡️'
+
+        msg = await ctx.reply(embed=queue_embed.get_page(page))
+        await msg.add_reaction(LEFT)
+        await msg.add_reaction(RIGHT)
+
+        def check(reaction: Reaction, user: Member):
+            return not user.bot and reaction.emoji in (LEFT, RIGHT)
+
+        while True:
+            on_reaction_add = asyncio.create_task(self.bot.wait_for("reaction_add", check=check))
+            on_reaction_remove = asyncio.create_task(self.bot.wait_for("reaction_remove", check=check))
+            done, pending = await asyncio.wait(
+                [on_reaction_add, on_reaction_remove],
+                timeout=10,
+                return_when=asyncio.FIRST_COMPLETED
+            )
+
+            if not done:
+                await msg.remove_reaction(LEFT, self.bot.user)
+                await msg.remove_reaction(RIGHT, self.bot.user)
+                break
+
+            for task in itertools.chain(done, pending):
+                task.cancel()
+
+            reaction, _ = done.pop().result()
+
+            if reaction.emoji == LEFT:
+                new_page = page - 1
+            else:
+                new_page = page + 1
+
+            try:
+                await msg.edit(embed=queue_embed.get_page(new_page))
+            except IndexError:
+                pass
+            else:
+                page = new_page
 
 
 async def setup(bot):
