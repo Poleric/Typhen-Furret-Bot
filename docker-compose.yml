@@ -1,0 +1,41 @@
+services:
+    lavalink:
+        user: "${UID}:${GID}"
+        image: ghcr.io/lavalink-devs/lavalink:4
+        container_name: lavalink
+#        restart: unless-stopped
+        environment:
+            - _JAVA_OPTIONS=-Xmx256M
+            - SERVER_PORT=2333
+            - LAVALINK_SERVER_PASSWORD=${LAVALINK_SERVER_PASSWORD}
+        volumes:
+            - ./config/lavalink/application.yml:/opt/Lavalink/application.yml
+            - ./plugins/:/opt/Lavalink/plugins/
+            - ./logs:/opt/Lavalink/logs
+        networks:
+            - lavalink
+        expose:
+            - 2333
+        healthcheck:
+            test: [ "CMD", "curl", "-H", "Authorization: ${LAVALINK_SERVER_PASSWORD}", "http://localhost:2333/version" ]
+            interval: 30s
+            timeout: 5s
+            retries: 5
+            start_period: 10s
+    bot:
+        user: "${UID}:${GID}"
+        build: .
+        container_name: typhen-bot
+        environment:
+            - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+            - LAVALINK_SERVER_PASSWORD=${LAVALINK_SERVER_PASSWORD}
+        volumes:
+            - ./logs:/usr/src/app/logs
+        networks:
+            - lavalink
+        depends_on:
+            lavalink:
+                condition: service_healthy
+networks:
+    lavalink:
+        name: lavalink

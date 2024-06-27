@@ -23,7 +23,7 @@ class Music(Cog):
 
     async def cog_load(self) -> None:
         nodes = [Node(
-            uri="http://localhost:2333",
+            uri="http://lavalink:2333",
             password=os.getenv("LAVALINK_SERVER_PASSWORD")
         )]
         await Pool.connect(nodes=nodes, client=self.bot, cache_capacity=100)
