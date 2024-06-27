@@ -19,4 +19,5 @@ def setup_logging(*, log_directory: str = "./logs") -> None:
         backupCount=7,
         encoding="utf-8"
     )
-    discord.utils.setup_logging(handler=file_handler, level=logging.DEBUG, root=True)
+    formatter = logging.Formatter('[{asctime}] [{levelname:<8}] {name}: {message}', "%Y-%m-%d %H:%M:%S", style='{')
+    discord.utils.setup_logging(handler=file_handler, formatter=formatter, level=logging.DEBUG, root=True)
