@@ -1,6 +1,10 @@
 FROM python:3.12-alpine
 
-RUN apk add --update --no-cache gcc libc-dev libffi-dev  # build wheel for cffi
+ARG TARGETARCH
+
+RUN if [ $TARGETARCH = "arm64" ]; then \
+      apk add --update --no-cache gcc libc-dev libffi-dev  # build wheel for cffi \
+    ; fi
 
 WORKDIR /usr/src/app
 
