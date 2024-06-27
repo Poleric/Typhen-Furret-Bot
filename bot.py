@@ -15,7 +15,7 @@ DEFAULT_ACTIVITY_MESSAGE = "Furret | furret help"
 EXTENSIONS_TO_LOAD = (
     "cogs.admin",
     "cogs.fun",
-    "cogs.game",
+    # "cogs.game",
     "cogs.music",
     "cogs.qotd"
 )
