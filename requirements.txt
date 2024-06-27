@@ -1,5 +1,5 @@
 discord.py[voice]
 asyncio
 numpy
-yt-dlp
 scipy
+wavelink
