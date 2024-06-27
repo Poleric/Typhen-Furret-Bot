@@ -11,7 +11,7 @@ import itertools
 import asyncio
 import os
 
-from typing import cast
+from typing import cast, Optional
 import logging
 
 logger = logging.getLogger("music")
@@ -60,8 +60,8 @@ class Music(Cog):
         await player.home.send(embed=embed, silent=True)
 
     @commands.command(aliases=['p'])
-    async def play(self, ctx: Context, query: str):
-        """Join a voice channel. Default to your current voice channel if not specified"""
+    async def play(self, ctx: Context, *, query: str):
+        """Play a song"""
         if not ctx.guild:
             return
 
@@ -78,10 +78,6 @@ class Music(Cog):
                 await ctx.send("I was unable to join this voice channel. Please try again.")
                 return
 
-        # Turn on AutoPlay to enabled mode.
-        # enabled = AutoPlay will play songs for us and fetch recommendations...
-        # partial = AutoPlay will play songs for us, but WILL NOT fetch recommendations...
-        # disabled = AutoPlay will do nothing...
         player.autoplay = AutoPlayMode.enabled
 
         # Lock the player to this channel...
@@ -92,10 +88,6 @@ class Music(Cog):
                 f"You can only play songs in {player.home.mention}, as the player has already started there.")
             return
 
-        # This will handle fetching Tracks and Playlists...
-        # Seed the doc strings for more information on this method...
-        # If spotify is enabled via LavaSrc, this will automatically fetch Spotify tracks if you pass a URL...
-        # Defaults to YouTube for non URL based queries...
         tracks: Search = await Playable.search(query, source=TrackSource.YouTube)
         if not tracks:
             await ctx.send(f"{ctx.author.mention} - Could not find any tracks with that query. Please try again.")
@@ -113,6 +105,85 @@ class Music(Cog):
         if not player.playing:
             # Play now since we aren't playing anything...
             await player.play(player.queue.get(), volume=30)
+
+    @commands.command()
+    async def search(self, ctx: Context, number_of_results: Optional[int] = 10, *, query: str):
+        if not ctx.guild:
+            return
+
+        player: Player
+        player = cast(Player, ctx.voice_client)  # type: ignore
+
+        if not player:
+            try:
+                player = await ctx.author.voice.channel.connect(cls=Player)  # type: ignore
+            except AttributeError:
+                await ctx.send("Please join a voice channel first before using this command.")
+                return
+            except ClientException:
+                await ctx.send("I was unable to join this voice channel. Please try again.")
+                return
+
+        player.autoplay = AutoPlayMode.enabled
+
+        # Lock the player to this channel...
+        if not hasattr(player, "home"):
+            player.home = ctx.channel
+        elif player.home != ctx.channel:
+            await ctx.send(
+                f"You can only play songs in {player.home.mention}, as the player has already started there.")
+            return
+
+        tracks: Search = await Playable.search(query, source=TrackSource.YouTube)
+
+        if not tracks:
+            await ctx.send(f"{ctx.author.mention} - Could not find any search results. Please try again.")
+            return
+
+        embed = Embed(color=0x818555)
+        for i, track in zip(range(1, 1 + number_of_results), tracks):
+            embed.add_field(
+                name="\u200b",
+                value=f"`{i}.` {QueueEmbed.generate_row(track)}",
+                inline=False
+            )
+        embed.add_field(name="\u200b", value="**Reply `cancel` to cancel search.**", inline=False)
+
+        msg = await ctx.reply(embed=embed)
+
+        # check if the message is by the one who searched and is choosing or cancelling the search
+        def check(message):
+            if message.author != ctx.author:
+                return False
+
+            if message.content == "cancel":
+                return True
+
+            try:
+                if int(message.content) in range(1, 1 + i):
+                    return True
+            except ValueError:
+                pass
+
+        try:
+            # wait for response
+            response = await self.bot.wait_for('message', check=check, timeout=30)
+        except asyncio.TimeoutError:  # timeout
+            await msg.edit(content='Timeout', embed=None)
+            return
+        else:
+            await msg.delete()
+            if response.content == 'cancel':
+                return
+
+        track: Playable = tracks[int(response.content) - 1]
+        await player.queue.put_wait(track)
+        await ctx.send(f"Added **`{track}`** to the queue.")
+
+        if not player.playing:
+            # Play now since we aren't playing anything...
+            await player.play(player.queue.get(), volume=30)
+
 
     @commands.command(aliases=['s'])
     async def skip(self, ctx: Context):
