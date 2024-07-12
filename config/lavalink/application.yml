@@ -18,7 +18,7 @@ plugins:
 
 lavalink:
     plugins:
-        -   dependency: "dev.lavalink.youtube:youtube-plugin:1.3.0"
+        -   dependency: "dev.lavalink.youtube:youtube-plugin:1.4.0"
             snapshot: false
     pluginsDir: "./plugins"
     #  defaultPluginRepository: "https://maven.lavalink.dev/releases" # optional, defaults to the Lavalink release repository
